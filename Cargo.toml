@@ -1,0 +1,7 @@
+[package]
+name = "av1parser"
+version = "0.1.0"
+authors = ["yoh <kawasaki.liamg@gmail.com>"]
+
+[dependencies]
+byteorder = "1"
