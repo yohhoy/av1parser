@@ -35,8 +35,7 @@ struct IvfFrame {
 ///
 /// parse IVF file header
 ///
-fn parse_ivf_header(header: &mut [u8]) -> Result<IvfHeader, String> {
-    let mut ivf = &*header;
+fn parse_ivf_header(mut ivf: &[u8]) -> Result<IvfHeader, String> {
     assert_eq!(ivf.len(), IVF_HDR_SIZE);
     // signature (4b)
     let mut sig = [0; 4];
