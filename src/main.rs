@@ -15,7 +15,7 @@ fn main() -> std::io::Result<()> {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        println!("usage: {} <inout.ivf>...", args[0]);
+        println!("usage: {} <input.ivf>...", args[0]);
         return Ok(());
     }
 
