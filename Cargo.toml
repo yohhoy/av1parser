@@ -5,3 +5,4 @@ authors = ["yoh <kawasaki.liamg@gmail.com>"]
 
 [dependencies]
 byteorder = "1"
+hex = "0.3"
