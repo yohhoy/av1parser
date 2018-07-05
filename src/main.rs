@@ -6,6 +6,7 @@ use std::fs;
 use std::io::{BufReader, Read};
 use std::io::{Seek, SeekFrom};
 
+mod bitio;
 mod ivf;
 mod obu;
 
@@ -52,10 +53,16 @@ fn main() -> std::io::Result<()> {
             let pos = reader.seek(SeekFrom::Current(0))?;
             // parse AV1 OBU frame
             while sz > 0 {
-                let obu = obu::paese_av1_obu(&mut reader, sz)?;
+                let obu = obu::parse_obu_header(&mut reader, sz)?;
                 println!("    {}", obu);
                 sz -= obu.header_len + obu.obu_size;
-                reader.seek(SeekFrom::Current(obu.obu_size as i64))?;
+                let pos = reader.seek(SeekFrom::Current(0))?;
+                if obu.obu_type == obu::OBU_SEQUENCE_HEADER {
+                    if let Some(sh) = obu::parse_sequence_header(&mut reader, obu.obu_size) {
+                        println!("    {:?}", sh);
+                    }
+                }
+                reader.seek(SeekFrom::Start(pos + obu.obu_size as u64))?;
             }
             reader.seek(SeekFrom::Start(pos + frame.size as u64))?;
         }
