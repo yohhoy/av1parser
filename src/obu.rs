@@ -161,11 +161,11 @@ fn leb128<R: io::Read>(bs: &mut R) -> io::Result<(u32, u32)> {
 /// parse trailing_bits()
 ///
 fn trailing_bits<R: io::Read>(br: &mut BitReader<R>) -> Option<()> {
-    let trailing_one_bit = br.f(1)?;
+    let trailing_one_bit = br.f::<u8>(1)?;
     if trailing_one_bit != 1 {
         return None;
     }
-    while let Some(trailing_zero_bit) = br.f(1) {
+    while let Some(trailing_zero_bit) = br.f::<u8>(1) {
         if trailing_zero_bit != 0 {
             return None;
         }
@@ -182,9 +182,9 @@ fn parse_color_config<R: io::Read>(
 ) -> Option<ColorConfig> {
     let mut cc = ColorConfig::default();
 
-    let high_bitdepth = br.f(1)? == 1; // f(1)
+    let high_bitdepth = br.f::<bool>(1)?; // f(1)
     if sh.seq_profile == 2 && high_bitdepth {
-        let twelve_bit = br.f(1)? == 1; // f(1)
+        let twelve_bit = br.f::<bool>(1)?; // f(1)
         cc.bit_depth = if twelve_bit { 12 } else { 10 }
     } else if sh.seq_profile <= 2 {
         cc.bit_depth = if high_bitdepth { 10 } else { 8 }
@@ -192,20 +192,20 @@ fn parse_color_config<R: io::Read>(
     if sh.seq_profile == 1 {
         cc.mono_chrome = false;
     } else {
-        cc.mono_chrome = br.f(1)? == 1; // f(1)
+        cc.mono_chrome = br.f::<bool>(1)?; // f(1)
     }
-    cc.color_description_present_flag = br.f(1)? == 1; // f(1)
+    cc.color_description_present_flag = br.f::<bool>(1)?; // f(1)
     if cc.color_description_present_flag {
-        cc.color_primaries = br.f(8)? as u8; // f(8)
-        cc.transfer_characteristics = br.f(8)? as u8; // f(8)
-        cc.matrix_coefficients = br.f(8)? as u8; // f(8)
+        cc.color_primaries = br.f::<u8>(8)?; // f(8)
+        cc.transfer_characteristics = br.f::<u8>(8)?; // f(8)
+        cc.matrix_coefficients = br.f::<u8>(8)?; // f(8)
     } else {
         cc.color_primaries = CP_UNSPECIFIED;
         cc.transfer_characteristics = TC_UNSPECIFIED;
         cc.matrix_coefficients = MC_UNSPECIFIED;
     }
     if cc.mono_chrome {
-        cc.color_range = br.f(1)? == 1; // f(1)
+        cc.color_range = br.f::<bool>(1)?; // f(1)
         cc.separate_uv_delta_q = false;
         return Some(cc);
     } else if cc.color_primaries == CP_BT_709
@@ -216,7 +216,7 @@ fn parse_color_config<R: io::Read>(
         return Some(cc);
     } else {
         let (subsampling_x, subsampling_y);
-        cc.color_range = br.f(1)? == 1; // f(1)
+        cc.color_range = br.f::<bool>(1)?; // f(1)
         if sh.seq_profile == 0 {
             subsampling_x = 1;
             subsampling_y = 1;
@@ -232,10 +232,10 @@ fn parse_color_config<R: io::Read>(
             }
         }
         if subsampling_x != 0 && subsampling_y != 0 {
-            cc.chroma_sample_position = br.f(2)? as u8; // f(2)
+            cc.chroma_sample_position = br.f::<u8>(2)?; // f(2)
         }
     }
-    cc.separate_uv_delta_q = br.f(1)? == 1; // f(1)
+    cc.separate_uv_delta_q = br.f::<bool>(1)?; // f(1)
 
     Some(cc)
 }
@@ -285,26 +285,26 @@ pub fn parse_sequence_header<R: io::Read>(bs: &mut R, sz: u32) -> Option<Sequenc
     let mut br = BitReader::new(bs, sz);
     let mut sh = SequenceHeader::default();
 
-    sh.seq_profile = br.f(3)? as u8; // f(3)
-    sh.still_picture = br.f(1)? == 1; // f(1)
-    sh.reduced_still_picture_header = br.f(1)? == 1; // f(1)
+    sh.seq_profile = br.f::<u8>(3)?; // f(3)
+    sh.still_picture = br.f::<bool>(1)?; // f(1)
+    sh.reduced_still_picture_header = br.f::<bool>(1)?; // f(1)
     if sh.reduced_still_picture_header {
         unimplemented!("reduced_still_picture_header==1");
     } else {
-        sh.timing_info_present_flag = br.f(1)? == 1; // f(1)
+        sh.timing_info_present_flag = br.f::<bool>(1)?; // f(1)
         if sh.timing_info_present_flag {
             unimplemented!("timing_info_present_flag==1");
         } else {
             sh.decoder_model_info_present_flag = false;
         }
-        sh.initial_display_delay_present_flag = br.f(1)? == 1; // f(1)
-        sh.operating_points_cnt_minus_1 = br.f(5)? as u8; // f(5)
+        sh.initial_display_delay_present_flag = br.f::<bool>(1)?; // f(1)
+        sh.operating_points_cnt_minus_1 = br.f::<u8>(5)?; // f(5)
         assert_eq!(sh.operating_points_cnt_minus_1, 0);
         for i in 0..=sh.operating_points_cnt_minus_1 as usize {
-            sh.op[i].operating_point_idc = br.f(12)? as u16; // f(12)
-            sh.op[i].seq_level_idx = br.f(5)? as u8; // f(5)
+            sh.op[i].operating_point_idc = br.f::<u16>(12)?; // f(12)
+            sh.op[i].seq_level_idx = br.f::<u8>(5)?; // f(5)
             if sh.op[i].seq_level_idx > 7 {
-                sh.op[i].seq_tier = br.f(1)? as u8; // f(1)
+                sh.op[i].seq_tier = br.f::<u8>(1)?; // f(1)
             } else {
                 sh.op[i].seq_tier = 0;
             }
@@ -316,64 +316,64 @@ pub fn parse_sequence_header<R: io::Read>(bs: &mut R, sz: u32) -> Option<Sequenc
             }
         }
     }
-    let frame_width_bits_minus_1 = br.f(4)? as usize; // f(4)
-    let frame_height_bits_minus_1 = br.f(4)? as usize; // f(4)
-    sh.max_frame_width = br.f(frame_width_bits_minus_1 + 1)? + 1; // f(n)
-    sh.max_frame_height = br.f(frame_height_bits_minus_1 + 1)? + 1; // f(n)
+    let frame_width_bits_minus_1 = br.f::<usize>(4)?; // f(4)
+    let frame_height_bits_minus_1 = br.f::<usize>(4)?; // f(4)
+    sh.max_frame_width = br.f::<u32>(frame_width_bits_minus_1 + 1)? + 1; // f(n)
+    sh.max_frame_height = br.f::<u32>(frame_height_bits_minus_1 + 1)? + 1; // f(n)
     if sh.reduced_still_picture_header {
         sh.frame_id_numbers_present_flag = false;
     } else {
-        sh.frame_id_numbers_present_flag = br.f(1)? == 1; // f(1)
+        sh.frame_id_numbers_present_flag = br.f::<bool>(1)?; // f(1)
     }
     if sh.frame_id_numbers_present_flag {
-        sh.delta_frame_id_length = br.f(4)? as u8 + 2; // f(4)
-        sh.additional_frame_id_length = br.f(3)? as u8 + 1; // f(3)
+        sh.delta_frame_id_length = br.f::<u8>(4)? + 2; // f(4)
+        sh.additional_frame_id_length = br.f::<u8>(3)? + 1; // f(3)
     }
-    sh.use_128x128_superblock = br.f(1)? == 1; // f(1)
-    sh.enable_filter_intra = br.f(1)? == 1; // f(1)
-    sh.enable_intra_edge_filter = br.f(1)? == 1; // f(1)
+    sh.use_128x128_superblock = br.f::<bool>(1)?; // f(1)
+    sh.enable_filter_intra = br.f::<bool>(1)?; // f(1)
+    sh.enable_intra_edge_filter = br.f::<bool>(1)?; // f(1)
     if sh.reduced_still_picture_header {
         unimplemented!("reduced_still_picture_header==1");
     } else {
-        sh.enable_interintra_compound = br.f(1)? == 1; // f(1)
-        sh.enable_masked_compound = br.f(1)? == 1; // f(1)
-        sh.enable_warped_motion = br.f(1)? == 1; // f(1)
-        sh.enable_dual_filter = br.f(1)? == 1; // f(1)
-        sh.enable_order_hint = br.f(1)? == 1; // f(1)
+        sh.enable_interintra_compound = br.f::<bool>(1)?; // f(1)
+        sh.enable_masked_compound = br.f::<bool>(1)?; // f(1)
+        sh.enable_warped_motion = br.f::<bool>(1)?; // f(1)
+        sh.enable_dual_filter = br.f::<bool>(1)?; // f(1)
+        sh.enable_order_hint = br.f::<bool>(1)?; // f(1)
         if sh.enable_order_hint {
-            sh.enable_jnt_comp = br.f(1)? == 1; // f(1)
-            sh.enable_ref_frame_mvs = br.f(1)? == 1; // f(1)
+            sh.enable_jnt_comp = br.f::<bool>(1)?; // f(1)
+            sh.enable_ref_frame_mvs = br.f::<bool>(1)?; // f(1)
         } else {
             sh.enable_jnt_comp = false;
             sh.enable_ref_frame_mvs = false;
         }
-        sh.seq_choose_screen_content_tools = br.f(1)? == 1; // f(1)
+        sh.seq_choose_screen_content_tools = br.f::<bool>(1)?; // f(1)
         if sh.seq_choose_screen_content_tools {
             sh.seq_force_screen_content_tools = SELECT_SCREEN_CONTENT_TOOLS;
         } else {
-            sh.seq_force_screen_content_tools = br.f(1)? as u8; // f(1)
+            sh.seq_force_screen_content_tools = br.f::<u8>(1)?; // f(1)
         }
         if sh.seq_force_screen_content_tools > 0 {
-            sh.seq_choose_integer_mv = br.f(1)? as u8; // f(1)
+            sh.seq_choose_integer_mv = br.f::<u8>(1)?; // f(1)
             if sh.seq_choose_integer_mv > 0 {
                 sh.seq_force_integer_mv = SELECT_INTEGER_MV;
             } else {
-                sh.seq_force_integer_mv = br.f(1)? as u8; // f(1)
+                sh.seq_force_integer_mv = br.f::<u8>(1)?; // f(1)
             }
         } else {
             sh.seq_force_integer_mv = SELECT_INTEGER_MV;
         }
         if sh.enable_order_hint {
-            sh.order_hint_bits = br.f(3)? as u8 + 1; // f(3)
+            sh.order_hint_bits = br.f::<u8>(3)? + 1; // f(3)
         } else {
             sh.order_hint_bits = 0;
         }
     }
-    sh.enable_superres = br.f(1)? == 1; // f(1)
-    sh.enable_cdef = br.f(1)? == 1; // f(1)
-    sh.enable_restoration = br.f(1)? == 1; // f(1)
+    sh.enable_superres = br.f::<bool>(1)?; // f(1)
+    sh.enable_cdef = br.f::<bool>(1)?; // f(1)
+    sh.enable_restoration = br.f::<bool>(1)?; // f(1)
     sh.color_config = parse_color_config(&mut br, &sh)?; // color_config()
-    sh.film_grain_params_present = br.f(1)? == 1; // f(1)
+    sh.film_grain_params_present = br.f::<bool>(1)?; // f(1)
     trailing_bits(&mut br)?;
 
     Some(sh)
