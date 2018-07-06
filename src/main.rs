@@ -46,6 +46,9 @@ fn main() -> std::io::Result<()> {
             }
         };
 
+        //
+        let mut sequence: Option<obu::SequenceHeader> = None;
+
         // parse all frames
         while let Ok(frame) = ivf::parse_ivf_frame(&mut reader) {
             println!("  F#{} size={}", frame.pts, frame.size);
@@ -57,10 +60,23 @@ fn main() -> std::io::Result<()> {
                 println!("    {}", obu);
                 sz -= obu.header_len + obu.obu_size;
                 let pos = reader.seek(SeekFrom::Current(0))?;
-                if obu.obu_type == obu::OBU_SEQUENCE_HEADER {
-                    if let Some(sh) = obu::parse_sequence_header(&mut reader, obu.obu_size) {
-                        println!("    {:?}", sh);
+                match obu.obu_type {
+                    obu::OBU_SEQUENCE_HEADER => {
+                        if let Some(sh) = obu::parse_sequence_header(&mut reader, obu.obu_size) {
+                            println!("    {:?}", sh);
+                            sequence = Some(sh);
+                        }
                     }
+                    obu::OBU_FRAME_HEADER | obu::OBU_FRAME => {
+                        if let Some(fh) = obu::parse_frame_header(
+                            &mut reader,
+                            obu.obu_size,
+                            sequence.as_ref().unwrap(),
+                        ) {
+                            println!("    {:?}", fh);
+                        }
+                    }
+                    _ => {}
                 }
                 reader.seek(SeekFrom::Start(pos + obu.obu_size as u64))?;
             }

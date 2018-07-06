@@ -2,6 +2,7 @@
 // https://aomedia.org/av1-bitstream-and-decoding-process-specification/
 //
 use bitio::BitReader;
+use std::cmp;
 use std::fmt;
 use std::io;
 
@@ -15,8 +16,18 @@ pub const OBU_REDUNDANT_FRAME_HEADER: u8 = 7;
 pub const OBU_TILE_LIST: u8 = 8;
 pub const OBU_PADDING: u8 = 15;
 
-const SELECT_SCREEN_CONTENT_TOOLS: u8 = 2;
-const SELECT_INTEGER_MV: u8 = 2;
+const REFS_PER_FRAME: usize = 3; // Number of reference frames that can be used for inter prediction
+const MAX_TILE_WIDTH: u32 = 4096; // Maximum width of a tile in units of luma samples
+const MAX_TILE_AREA: u32 = 4096 * 2304; // Maximum area of a tile in units of luma samples
+const MAX_TILE_ROWS: u32 = 64; // Maximum number of tile rows
+const MAX_TILE_COLS: u32 = 64; // Maximum number of tile columns
+const NUM_REF_FRAMES: u8 = 8; // Number of frames that can be stored for future reference
+const SELECT_SCREEN_CONTENT_TOOLS: u8 = 2; // Value that indicates the allow_screen_content_tools syntax element is coded
+const SELECT_INTEGER_MV: u8 = 2; // Value that indicates the force_integer_mv syntax element is coded
+const PRIMARY_REF_NONE: u8 = 7; // Value of primary_ref_frame indicating that there is no primary reference frame
+const SUPERRES_NUM: usize = 8; // Numerator for upscaling ratio
+const SUPERRES_DENOM_MIN: usize = 9; // Smallest denominator for upscaling ratio
+const SUPERRS_DENOM_BITS: usize = 3; // Number of bits sent to specify denominator of upscaling ratio
 
 // Color primaries
 const CP_BT_709: u8 = 1; // BT.709
@@ -29,6 +40,15 @@ const TC_SRGB: u8 = 13; // sRGB or sYCC
 // Matrix coefacients
 const MC_IDENTITY: u8 = 0; // Identity matrix
 const MC_UNSPECIFIED: u8 = 2; // Unspecified
+
+// Frame type
+const KEY_FRAME: u8 = 0;
+const INTER_FRAME: u8 = 1;
+const INTRA_ONLY_FRAME: u8 = 2;
+const SWITCH_FRAME: u8 = 3;
+
+// interpolation_filter
+const SWITCHABLE: u8 = 4;
 
 ///
 /// OBU(Open Bitstream Unit)
@@ -68,18 +88,17 @@ impl fmt::Display for Obu {
                 obu_type, self.temporal_id, self.spatial_id, self.header_len, self.obu_size
             )
         } else {
-            //  Base layer (temporal_id == 0 && spatial_id == 0)
+            // Base layer (temporal_id == 0 && spatial_id == 0)
             write!(f, "{} size={}+{}", obu_type, self.header_len, self.obu_size)
         }
     }
 }
 
-///
-/// color_config()
-///
+// Color config
 #[derive(Debug, Default)]
 pub struct ColorConfig {
-    pub bit_depth: u8,
+    pub bit_depth: u8, // BitDepth
+    // color_config()
     pub mono_chrome: bool,                    // f(1)
     pub color_description_present_flag: bool, // f(1)
     pub color_primaries: u8,                  // f(8)
@@ -90,6 +109,19 @@ pub struct ColorConfig {
     pub separate_uv_delta_q: bool,            // f(1)
 }
 
+/// Timing info
+#[derive(Debug, Default)]
+pub struct TimingInfo {
+    // timing_info()
+    pub num_units_in_display_tick: u32, // f(32)
+    pub time_scale: u32,                // f(32)
+    pub equal_picture_interval: bool,   // f(1)
+    pub num_ticks_per_picture: u32,     // uvlc()
+}
+
+///
+/// operating point in Sequence Header OBU
+///
 #[derive(Debug, Default)]
 pub struct OperatingPoint {
     pub operating_point_idc: u16, // f(12)
@@ -106,10 +138,13 @@ pub struct SequenceHeader {
     pub still_picture: bool,                      // f(1)
     pub reduced_still_picture_header: bool,       // f(1)
     pub timing_info_present_flag: bool,           // f(1)
+    pub timing_info: TimingInfo,                  // timing_info()
     pub decoder_model_info_present_flag: bool,    // f(1)
     pub initial_display_delay_present_flag: bool, // f(1)
     pub operating_points_cnt_minus_1: u8,         // f(5)
     pub op: [OperatingPoint; 1],                  // OperatingPoint
+    pub frame_width_bits: u8,                     // f(4)
+    pub frame_height_bits: u8,                    // f(4)
     pub max_frame_width: u32,                     // f(n)
     pub max_frame_height: u32,                    // f(n)
     pub frame_id_numbers_present_flag: bool,      // f(1)
@@ -137,9 +172,97 @@ pub struct SequenceHeader {
     pub film_grain_params_present: bool,          // f(1)
 }
 
+/// Frame size
+#[derive(Debug, Default)]
+pub struct FrameSize {
+    // frame_size()
+    pub frame_width: u32,                // FrameWidth
+    pub frame_height: u32,               // FrameHeight
+    pub superres_params: SuperresParams, // superres_params()
+}
+
+/// Render size
+#[derive(Debug, Default)]
+pub struct RenderSize {
+    // render_size()
+    pub render_and_frame_size_different: bool, // f(1)
+    pub render_width: u32,                     // RenderWidth
+    pub render_height: u32,                    // RenderHeight
+}
+
+/// Superres params
+#[derive(Debug, Default)]
+pub struct SuperresParams {
+    // superres_params()
+    pub use_superres: bool,  // f(1)
+    pub upscaled_width: u32, // UpscaledWidth
+}
+
+/// Interpolation filter
+#[derive(Debug, Default)]
+pub struct InterpolationFilter {
+    // read_interpolation_filter()
+    pub is_filter_switchable: bool, // f(1)
+    pub interpolation_filter: u8,   // f(2)
+}
+
+/// Tile info
+#[derive(Debug, Default)]
+pub struct TileInfo {
+    pub tile_cols: u16, // TileCols
+    pub tile_rows: u16, // TileRows
+    // tile_info()
+    pub uniform_tile_spacing_flag: bool, // f(1)
+    pub context_update_tile_id: u32,     // f(TileRowsLog2+TileColsLog2)
+    pub tile_size_bytes: usize,          // TileSizeBytes
+}
+
 ///
+/// Frame header OBU
+///
+#[derive(Debug, Default)]
+pub struct FrameHeader {
+    // uncompressed_header()
+    pub show_existing_frame: bool,                 // f(1)
+    pub frame_to_show_map_idx: u8,                 // f(3)
+    pub display_frame_id: u16,                     // f(idLen)
+    pub frame_type: u8,                            // f(2)
+    pub show_frame: bool,                          // f(1)
+    pub showable_frame: bool,                      // f(1)
+    pub error_resilient_mode: bool,                // f(1)
+    pub disable_cdf_update: bool,                  // f(1)
+    pub allow_screen_content_tools: bool,          // f(1)
+    pub force_integer_mv: bool,                    // f(1)
+    pub current_frame_id: u16,                     // f(idLen)
+    pub frame_size_override_flag: bool,            // f(1)
+    pub order_hint: u8,                            // f(OrderHintBits)
+    pub primary_ref_frame: u8,                     // f(3)
+    pub refresh_frame_flags: u8,                   // f(8)
+    pub frame_size: FrameSize,                     // frame_size()
+    pub render_size: RenderSize,                   // render_size()
+    pub allow_intrabc: bool,                       // f(1)
+    pub frame_refs_short_signaling: bool,          // f(1)
+    pub last_frame_idx: u8,                        // f(3)
+    pub gold_frame_idx: u8,                        // f(3)
+    pub allow_high_precision_mv: bool,             // f(1)
+    pub interpolation_filter: InterpolationFilter, // interpolation_filter()
+    pub is_motion_mode_switchable: bool,           // f(1)
+    pub use_ref_frame_mvs: bool,                   // f(1)
+    pub disable_frame_end_update_cdf: bool,        // f(1)
+    pub tile_info: TileInfo,                       // tile_info()
+    pub allow_warped_motion: bool,                 // f(1)
+    pub reduced_tx_set: bool,                      // f(1)
+}
+
+/// return (MiCols, MiRows)
+fn compute_image_size(fs: &FrameSize) -> (u32, u32) {
+    (
+        2 * ((fs.frame_width + 7) >> 3),  // MiCol
+        2 * ((fs.frame_height + 7) >> 3), // MiRows
+    )
+}
+
 /// return (Leb128Bytes, leb128())
-///
 fn leb128<R: io::Read>(bs: &mut R) -> io::Result<(u32, u32)> {
     let mut value: u64 = 0;
     let mut leb128bytes = 0;
@@ -241,6 +364,218 @@ fn parse_color_config<R: io::Read>(
 }
 
 ///
+/// parse frame_size()
+///
+fn parse_frame_size<R: io::Read>(
+    br: &mut BitReader<R>,
+    sh: &SequenceHeader,
+    fh: &FrameHeader,
+) -> Option<FrameSize> {
+    let mut fs = FrameSize::default();
+
+    if fh.frame_size_override_flag {
+        fs.frame_width = br.f::<u32>(sh.frame_width_bits as usize)? + 1; // f(n)
+        fs.frame_height = br.f::<u32>(sh.frame_height_bits as usize)? + 1; // f(n)
+    } else {
+        fs.frame_width = sh.max_frame_width;
+        fs.frame_height = sh.max_frame_height;
+    }
+    fs.superres_params = parse_superres_params(br, &sh, &mut fs)?; // superres_params()
+                                                                   // compute_image_size()
+
+    Some(fs)
+}
+
+///
+/// parse render_size()
+///
+fn parse_render_size<R: io::Read>(br: &mut BitReader<R>, fs: &FrameSize) -> Option<RenderSize> {
+    let mut rs = RenderSize::default();
+
+    rs.render_and_frame_size_different = br.f::<bool>(1)?; // f(1)
+    if rs.render_and_frame_size_different {
+        rs.render_width = br.f::<u32>(16)? + 1; // f(16)
+        rs.render_height = br.f::<u32>(16)? + 1; // f(16)
+    } else {
+        rs.render_width = fs.superres_params.upscaled_width;
+        rs.render_height = fs.frame_height;
+    }
+
+    Some(rs)
+}
+
+///
+/// parse interpolation_filter()
+///
+fn parse_interpolation_filter<R: io::Read>(br: &mut BitReader<R>) -> Option<InterpolationFilter> {
+    let mut ifp = InterpolationFilter::default();
+
+    ifp.is_filter_switchable = br.f::<bool>(1)?; // f(1)
+    if ifp.is_filter_switchable {
+        ifp.interpolation_filter = SWITCHABLE;
+    } else {
+        ifp.interpolation_filter = br.f::<u8>(2)?; // f(2)
+    }
+
+    Some(ifp)
+}
+
+///
+/// parse superres_params()
+///
+fn parse_superres_params<R: io::Read>(
+    br: &mut BitReader<R>,
+    sh: &SequenceHeader,
+    fs: &mut FrameSize,
+) -> Option<SuperresParams> {
+    let mut sp = SuperresParams::default();
+
+    if sh.enable_superres {
+        sp.use_superres = br.f::<bool>(1)?; // f(1)
+    } else {
+        sp.use_superres = false;
+    }
+    let supreres_denom;
+    if sp.use_superres {
+        let coded_denom = br.f::<usize>(SUPERRS_DENOM_BITS)?; // f(SUPERRES_DENOM_BITS)
+        supreres_denom = coded_denom + SUPERRES_DENOM_MIN;
+    } else {
+        supreres_denom = SUPERRES_NUM;
+    }
+    sp.upscaled_width = fs.frame_width;
+    fs.frame_width = ((sp.upscaled_width as usize * SUPERRES_NUM + (supreres_denom / 2))
+        / supreres_denom) as u32;
+
+    Some(sp)
+}
+
+///
+/// parse tile_info()
+///
+fn parse_tile_info<R: io::Read>(
+    br: &mut BitReader<R>,
+    sh: &SequenceHeader,
+    fs: &FrameSize,
+) -> Option<TileInfo> {
+    let mut ti = TileInfo::default();
+
+    // tile_log2: Tile size calculation function
+    let tile_log2 = |blk_size, target| {
+        let mut k = 0;
+        while (blk_size << k) < target {
+            k += 1;
+        }
+        k
+    };
+
+    let (mi_cols, mi_rows) = compute_image_size(fs);
+    let sb_cols = if sh.use_128x128_superblock {
+        (mi_cols + 31) >> 5
+    } else {
+        (mi_cols + 15) >> 4
+    };
+    let sb_rows = if sh.use_128x128_superblock {
+        (mi_rows + 31) >> 5
+    } else {
+        (mi_rows + 15) >> 4
+    };
+    let sb_shift = if sh.use_128x128_superblock { 5 } else { 4 };
+    let sb_size = sb_shift + 2;
+    let max_tile_width_sb = MAX_TILE_WIDTH >> sb_size;
+    let max_tile_area_sb = MAX_TILE_AREA >> (2 * sb_size);
+    let min_log2_tile_cols = tile_log2(max_tile_width_sb, sb_cols);
+    let max_log2_tile_cols = tile_log2(1, cmp::min(sb_cols, MAX_TILE_COLS));
+    let max_log2_tile_rows = tile_log2(1, cmp::min(sb_rows, MAX_TILE_ROWS));
+    let min_log2_tiles = cmp::max(
+        min_log2_tile_cols,
+        tile_log2(max_tile_area_sb, sb_rows * sb_cols),
+    );
+
+    ti.uniform_tile_spacing_flag = br.f::<bool>(1)?; // f(1)
+    let (mut tile_cols_log2, mut tile_rows_log2): (usize, usize);
+    if ti.uniform_tile_spacing_flag {
+        tile_cols_log2 = min_log2_tile_cols;
+        while tile_cols_log2 < max_log2_tile_cols {
+            let increment_tile_cols_log2 = br.f::<bool>(1)?; // f(1)
+            if increment_tile_cols_log2 {
+                tile_cols_log2 += 1;
+            } else {
+                break;
+            }
+        }
+        let tile_width_sb = (sb_cols + (1 << tile_cols_log2) - 1) >> tile_cols_log2;
+        let (mut i, mut start_sb) = (0, 0);
+        while start_sb < sb_cols {
+            // MiColStarts[i] = startSb << sbShift
+            i += 1;
+            start_sb += tile_width_sb;
+        }
+        // MiColStarts[i] = MiCols
+        ti.tile_cols = i;
+
+        let min_log2_tile_rows = cmp::max(min_log2_tiles - tile_cols_log2, 0);
+        tile_rows_log2 = min_log2_tile_rows;
+        while tile_rows_log2 < max_log2_tile_rows {
+            let increment_tile_rows_log2 = br.f::<bool>(1)?; // f(1)
+            if increment_tile_rows_log2 {
+                tile_rows_log2 += 1;
+            } else {
+                break;
+            }
+        }
+        let tile_height_sb = (sb_rows + (1 << tile_rows_log2) - 1) >> tile_rows_log2;
+        let (mut i, mut start_sb) = (0, 0);
+        while start_sb < sb_rows {
+            // MiRowStarts[i] = startSb << sbShift
+            i += 1;
+            start_sb += tile_height_sb;
+        }
+        // MiRowStarts[i] = MiRows
+        ti.tile_rows = i;
+    } else {
+        let mut widest_tile_sb = 0;
+        let (mut i, mut start_sb) = (0, 0);
+        while start_sb < sb_cols {
+            // MiColStarts[i] = startSb << sbShift
+            let max_width = cmp::min(sb_cols - start_sb, max_tile_width_sb);
+            let size_sb = br.ns(max_width)? + 1; // ns(maxWidth)
+            widest_tile_sb = cmp::max(size_sb, widest_tile_sb);
+            start_sb += size_sb;
+            i += 1;
+        }
+        // MiColStarts[i] = MiCols
+        ti.tile_cols = i;
+        tile_cols_log2 = tile_log2(1, ti.tile_cols as u32);
+
+        let max_tile_area_sb = if min_log2_tiles > 0 {
+            (sb_rows * sb_cols) >> (min_log2_tiles + 1)
+        } else {
+            sb_rows * sb_cols
+        };
+        let max_tile_height_sb = cmp::max(max_tile_area_sb / widest_tile_sb, 1);
+        let (mut start_sb, mut i) = (0, 0);
+        while start_sb < sb_rows {
+            // MiRowStarts[i] = startSb << sbShift
+            let max_height = cmp::min(sb_rows - start_sb, max_tile_height_sb);
+            let size_sb = br.ns(max_height)? + 1; // ns(maxHeight)
+            start_sb += size_sb;
+            i += 1;
+        }
+        // MiRowStarts[ i ] = MiRows
+        ti.tile_rows = i;
+        tile_rows_log2 = tile_log2(1, ti.tile_rows as u32);
+    }
+    if tile_cols_log2 > 0 && tile_rows_log2 > 0 {
+        ti.context_update_tile_id = br.f::<u32>(tile_cols_log2 + tile_rows_log2)?; // f(TileRowsLog2+TileColsLog2)
+        ti.tile_size_bytes = br.f::<usize>(2)? + 1; // f(2)
+    } else {
+        ti.context_update_tile_id = 0;
+    }
+
+    Some(ti)
+}
+
+///
 /// parse AV1 OBU header
 ///
 pub fn parse_obu_header<R: io::Read>(bs: &mut R, sz: u32) -> io::Result<Obu> {
@@ -260,7 +595,7 @@ pub fn parse_obu_header<R: io::Read>(bs: &mut R, sz: u32) -> io::Result<Obu> {
     } else {
         (0, 0)
     };
-    // parse open_bitstream_unit()
+    // parse 'obu_size' in open_bitstream_unit()
     let (obu_size_len, obu_size) = if obu_has_size_field == 1 {
         leb128(bs)?
     } else {
@@ -316,10 +651,10 @@ pub fn parse_sequence_header<R: io::Read>(bs: &mut R, sz: u32) -> Option<Sequenc
             }
         }
     }
-    let frame_width_bits_minus_1 = br.f::<usize>(4)?; // f(4)
-    let frame_height_bits_minus_1 = br.f::<usize>(4)?; // f(4)
-    sh.max_frame_width = br.f::<u32>(frame_width_bits_minus_1 + 1)? + 1; // f(n)
-    sh.max_frame_height = br.f::<u32>(frame_height_bits_minus_1 + 1)? + 1; // f(n)
+    sh.frame_width_bits = br.f::<u8>(4)? + 1; // f(4)
+    sh.frame_height_bits = br.f::<u8>(4)? + 1; // f(4)
+    sh.max_frame_width = br.f::<u32>(sh.frame_width_bits as usize)? + 1; // f(n)
+    sh.max_frame_height = br.f::<u32>(sh.frame_height_bits as usize)? + 1; // f(n)
     if sh.reduced_still_picture_header {
         sh.frame_id_numbers_present_flag = false;
     } else {
@@ -377,4 +712,229 @@ pub fn parse_sequence_header<R: io::Read>(bs: &mut R, sz: u32) -> Option<Sequenc
     trailing_bits(&mut br)?;
 
     Some(sh)
+}
+
+///
+/// parse frame_header
+///
+pub fn parse_frame_header<R: io::Read>(
+    bs: &mut R,
+    sz: u32,
+    sh: &SequenceHeader,
+) -> Option<FrameHeader> {
+    let mut br = BitReader::new(bs, sz);
+    let mut fh = FrameHeader::default();
+
+    // uncompressed_header()
+    let id_len = if sh.frame_id_numbers_present_flag {
+        sh.additional_frame_id_length + sh.delta_frame_id_length
+    } else {
+        0
+    } as usize;
+    let all_frames = ((1u32 << NUM_REF_FRAMES) - 1) as u8; // 0xff
+    let frame_is_intra: bool;
+    if sh.reduced_still_picture_header {
+        fh.show_existing_frame = false;
+        fh.frame_type = KEY_FRAME;
+        frame_is_intra = true;
+        fh.show_frame = true;
+        fh.showable_frame = false;
+    } else {
+        fh.show_existing_frame = br.f::<bool>(1)?; // f(1)
+        if fh.show_existing_frame {
+            fh.frame_to_show_map_idx = br.f::<u8>(3)?; // f(3)
+            if sh.decoder_model_info_present_flag && !sh.timing_info.equal_picture_interval {
+                unimplemented!("temporal_point_info()");
+            }
+            fh.refresh_frame_flags = 0;
+            if sh.frame_id_numbers_present_flag {
+                fh.display_frame_id = br.f::<u16>(id_len)?; // f(idLen)
+            }
+            fh.frame_type = 255; //FIXME: RefFrameType[ frame_to_show_map_idx ]
+            if fh.frame_type == KEY_FRAME {
+                fh.refresh_frame_flags = all_frames;
+            }
+            if sh.film_grain_params_present {
+                unimplemented!("load_grain_params()");
+            }
+            return Some(fh);
+        }
+        fh.frame_type = br.f::<u8>(2)?; // f(2)
+        frame_is_intra = fh.frame_type == INTRA_ONLY_FRAME || fh.frame_type == KEY_FRAME;
+        fh.show_frame = br.f::<bool>(1)?; // f(1)
+        if fh.show_frame
+            && sh.decoder_model_info_present_flag
+            && !sh.timing_info.equal_picture_interval
+        {
+            unimplemented!("temporal_point_info()");
+        }
+        if fh.show_frame {
+            fh.showable_frame = fh.frame_type != KEY_FRAME;
+        } else {
+            fh.showable_frame = br.f::<bool>(1)?; // f(1)
+        }
+        if fh.frame_type == SWITCH_FRAME || (fh.frame_type == KEY_FRAME && fh.show_frame) {
+            fh.error_resilient_mode = true;
+        } else {
+            fh.error_resilient_mode = br.f::<bool>(1)?; // f(1)
+        }
+    }
+    fh.disable_cdf_update = br.f::<bool>(1)?; // f(1)
+    if sh.seq_force_screen_content_tools == SELECT_SCREEN_CONTENT_TOOLS {
+        fh.allow_screen_content_tools = br.f::<bool>(1)?; // f(1)
+    } else {
+        fh.allow_screen_content_tools = sh.seq_force_screen_content_tools != 0;
+    }
+    if fh.allow_screen_content_tools {
+        if sh.seq_force_integer_mv == SELECT_INTEGER_MV {
+            fh.force_integer_mv = br.f::<bool>(1)?; // f(1)
+        } else {
+            fh.force_integer_mv = sh.seq_force_integer_mv != 0;
+        }
+    }
+    if frame_is_intra {
+        fh.force_integer_mv = true;
+    }
+    if sh.frame_id_numbers_present_flag {
+        fh.current_frame_id = br.f::<u16>(id_len)?; // f(idLen)
+                                                    // mark_ref_frames(idLen)
+    } else {
+        fh.current_frame_id = 0;
+    }
+    if fh.frame_type == SWITCH_FRAME {
+        fh.frame_size_override_flag = true;
+    } else if sh.reduced_still_picture_header {
+        fh.frame_size_override_flag = false;
+    } else {
+        fh.frame_size_override_flag = br.f::<bool>(1)?; // f(1)
+    }
+    fh.order_hint = br.f::<u8>(sh.order_hint_bits as usize)?; // f(OrderHintBits)
+    if frame_is_intra || fh.error_resilient_mode {
+        fh.primary_ref_frame = PRIMARY_REF_NONE;
+    } else {
+        fh.primary_ref_frame = br.f::<u8>(3)?; // f(3)
+    }
+    if sh.decoder_model_info_present_flag {
+        unimplemented!("decoder_model_info_present_flag==1");
+    }
+    fh.allow_high_precision_mv = false;
+    fh.use_ref_frame_mvs = false;
+    fh.allow_intrabc = false;
+    if fh.frame_type == SWITCH_FRAME || (fh.frame_type == KEY_FRAME && fh.show_frame) {
+        fh.refresh_frame_flags = all_frames;
+    } else {
+        fh.refresh_frame_flags = br.f::<u8>(8)?; // f(8)
+    }
+    if !frame_is_intra || fh.refresh_frame_flags != all_frames {
+        if fh.error_resilient_mode && sh.enable_order_hint {
+            unimplemented!("error_resilient_mode && enable_order_hint");
+        }
+    }
+    if fh.frame_type == KEY_FRAME {
+        fh.frame_size = parse_frame_size(&mut br, sh, &fh)?; // frame_size()
+        fh.render_size = parse_render_size(&mut br, &fh.frame_size)?; // render_size()
+        if fh.allow_screen_content_tools
+            && fh.frame_size.superres_params.upscaled_width == fh.frame_size.frame_width
+        {
+            fh.allow_intrabc = br.f::<bool>(1)?; // f(1)
+        }
+    } else {
+        if fh.frame_type == INTRA_ONLY_FRAME {
+            fh.frame_size = parse_frame_size(&mut br, sh, &fh)?; // frame_size()
+            fh.render_size = parse_render_size(&mut br, &fh.frame_size)?; // render_size()
+            if fh.allow_screen_content_tools
+                && fh.frame_size.superres_params.upscaled_width == fh.frame_size.frame_width
+            {
+                fh.allow_intrabc = br.f::<bool>(1)?; // f(1)
+            }
+        } else {
+            if !sh.enable_order_hint {
+                fh.frame_refs_short_signaling = false;
+            } else {
+                fh.frame_refs_short_signaling = br.f::<bool>(1)?; // f(1)
+                if fh.frame_refs_short_signaling {
+                    fh.last_frame_idx = br.f::<u8>(3)?; // f(3)
+                    fh.gold_frame_idx = br.f::<u8>(3)?; // f(3)
+                                                        // set_frame_refs()
+                }
+            }
+            for _i in 0..REFS_PER_FRAME {
+                if !fh.frame_refs_short_signaling {
+                    let _ref_frame_idx = br.f::<u8>(3)?; // f(3)
+                                                         // FIXME
+                }
+                if sh.frame_id_numbers_present_flag {
+                    let _delta_frame_id = br.f::<u8>(sh.delta_frame_id_length as usize); // f(n)
+                                                                                         // FIXME
+                }
+            }
+            if fh.frame_size_override_flag && !fh.error_resilient_mode {
+                unimplemented!("frame_size_with_refs()");
+            } else {
+                fh.frame_size = parse_frame_size(&mut br, sh, &fh)?; // frame_size()
+                fh.render_size = parse_render_size(&mut br, &fh.frame_size)?; // render_size()
+            }
+            if fh.force_integer_mv {
+                fh.allow_high_precision_mv = false;
+            } else {
+                fh.allow_high_precision_mv = br.f::<bool>(1)?; // f(1)
+            }
+            fh.interpolation_filter = parse_interpolation_filter(&mut br)?; // read_interpolation_filter()
+            fh.is_motion_mode_switchable = br.f::<bool>(1)?; // f(1)
+            if fh.error_resilient_mode || !sh.enable_ref_frame_mvs {
+                fh.use_ref_frame_mvs = false;
+            } else {
+                fh.use_ref_frame_mvs = br.f::<bool>(1)?; // f(1)
+            }
+        }
+    }
+    if !frame_is_intra {
+        // OrderHints[refFrame]
+    }
+    if sh.reduced_still_picture_header || fh.disable_cdf_update {
+        fh.disable_frame_end_update_cdf = true;
+    } else {
+        fh.disable_frame_end_update_cdf = br.f::<bool>(1)?; // f(1)
+    }
+    if fh.primary_ref_frame == PRIMARY_REF_NONE {
+        // init_non_coeff_cdfs()
+        // setup_past_independence()
+    } else {
+        // load_cdfs()
+        // load_previous()
+    }
+    if fh.use_ref_frame_mvs {
+        // motion_field_estimation()
+    }
+    fh.tile_info = parse_tile_info(&mut br, sh, &fh.frame_size)?; // tile_info()
+
+    // quantization_params()
+    // segmentation_params()
+    // delta_q_params()
+    // delta_lf_params()
+    if fh.primary_ref_frame == PRIMARY_REF_NONE {
+        // init_coeff_cdfs()
+    } else {
+        // load_previous_segment_ids()
+    }
+    // {
+    //   SegQMLevel[][]
+    // }
+    // loop_filter_params()
+    // cdef_params()
+    // lr_params()
+    // read_tx_mode()
+    // frame_reference_mode()
+    // skip_mode_params()
+    if frame_is_intra || fh.error_resilient_mode || !sh.enable_warped_motion {
+        fh.allow_warped_motion = false;
+    } else {
+        fh.allow_warped_motion = br.f::<bool>(1)?; // f(1)
+    }
+    fh.reduced_tx_set = br.f::<bool>(1)?; // f(1)
+
+    // global_motion_params()
+    // film_grain_params()
+
+    Some(fh)
 }
