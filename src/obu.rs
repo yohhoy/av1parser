@@ -158,6 +158,22 @@ fn leb128<R: io::Read>(bs: &mut R) -> io::Result<(u32, u32)> {
 }
 
 ///
+/// parse trailing_bits()
+///
+fn trailing_bits<R: io::Read>(br: &mut BitReader<R>) -> Option<()> {
+    let trailing_one_bit = br.f(1)?;
+    if trailing_one_bit != 1 {
+        return None;
+    }
+    while let Some(trailing_zero_bit) = br.f(1) {
+        if trailing_zero_bit != 0 {
+            return None;
+        }
+    }
+    Some(())
+}
+
+///
 /// parse color_config()
 ///
 fn parse_color_config<R: io::Read>(
@@ -358,6 +374,7 @@ pub fn parse_sequence_header<R: io::Read>(bs: &mut R, sz: u32) -> Option<Sequenc
     sh.enable_restoration = br.f(1)? == 1; // f(1)
     sh.color_config = parse_color_config(&mut br, &sh)?; // color_config()
     sh.film_grain_params_present = br.f(1)? == 1; // f(1)
+    trailing_bits(&mut br)?;
 
     Some(sh)
 }
