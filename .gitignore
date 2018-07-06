@@ -6,4 +6,4 @@
 **/*.rs.bk
 
 # test vectors
-ivfs/*.ivf
+streams/*
