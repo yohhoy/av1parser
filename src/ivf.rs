@@ -14,9 +14,9 @@ pub const IVF_VERSION: u16 = 0;
 ///
 #[derive(Debug)]
 pub struct IvfHeader {
-    pub fcc: [u8; 4], // FourCC
-    pub width: u16,   // [pel]
-    pub height: u16,  // [pel]
+    pub codec: [u8; 4], // FourCC
+    pub width: u16,     // [pel]
+    pub height: u16,    // [pel]
     pub framerate: u16,
     pub timescale: u16,
     pub nframes: u32,
@@ -59,9 +59,9 @@ pub fn parse_ivf_header(mut ivf: &[u8]) -> Result<IvfHeader, String> {
     if hdrlen != IVF_HEADER_SIZE as u16 {
         return Err(format!("Invalid IVF header length({})", hdrlen));
     }
-    // FourCC (4b)
-    let mut fcc = [0; 4];
-    ivf.read_exact(&mut fcc).unwrap();
+    // codec (4b)
+    let mut codec = [0; 4];
+    ivf.read_exact(&mut codec).unwrap();
     // width (2b), height (2b)
     let mut width = [0; 2];
     let mut height = [0; 2];
@@ -82,7 +82,7 @@ pub fn parse_ivf_header(mut ivf: &[u8]) -> Result<IvfHeader, String> {
     let nframes = LittleEndian::read_u32(&nframes);
 
     Ok(IvfHeader {
-        fcc: fcc,
+        codec: codec,
         width: width,
         height: height,
         framerate: framerate,

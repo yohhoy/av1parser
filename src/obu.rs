@@ -1,6 +1,8 @@
 //
 // https://aomedia.org/av1-bitstream-and-decoding-process-specification/
 //
+#![allow(dead_code)]
+use av1;
 use bitio::BitReader;
 use std::cmp;
 use std::fmt;
@@ -16,12 +18,14 @@ pub const OBU_REDUNDANT_FRAME_HEADER: u8 = 7;
 pub const OBU_TILE_LIST: u8 = 8;
 pub const OBU_PADDING: u8 = 15;
 
+use av1::LAST_FRAME;
+
 const REFS_PER_FRAME: usize = 3; // Number of reference frames that can be used for inter prediction
 const MAX_TILE_WIDTH: u32 = 4096; // Maximum width of a tile in units of luma samples
 const MAX_TILE_AREA: u32 = 4096 * 2304; // Maximum area of a tile in units of luma samples
 const MAX_TILE_ROWS: u32 = 64; // Maximum number of tile rows
 const MAX_TILE_COLS: u32 = 64; // Maximum number of tile columns
-const NUM_REF_FRAMES: u8 = 8; // Number of frames that can be stored for future reference
+pub const NUM_REF_FRAMES: usize = 8; // Number of frames that can be stored for future reference
 const SELECT_SCREEN_CONTENT_TOOLS: u8 = 2; // Value that indicates the allow_screen_content_tools syntax element is coded
 const SELECT_INTEGER_MV: u8 = 2; // Value that indicates the force_integer_mv syntax element is coded
 const PRIMARY_REF_NONE: u8 = 7; // Value of primary_ref_frame indicating that there is no primary reference frame
@@ -238,17 +242,20 @@ pub struct FrameHeader {
     pub order_hint: u8,                            // f(OrderHintBits)
     pub primary_ref_frame: u8,                     // f(3)
     pub refresh_frame_flags: u8,                   // f(8)
+    pub ref_order_hint: [u8; NUM_REF_FRAMES],      // f(OrderHintBits)
     pub frame_size: FrameSize,                     // frame_size()
     pub render_size: RenderSize,                   // render_size()
     pub allow_intrabc: bool,                       // f(1)
     pub frame_refs_short_signaling: bool,          // f(1)
     pub last_frame_idx: u8,                        // f(3)
     pub gold_frame_idx: u8,                        // f(3)
+    pub ref_frame_idx: [u8; NUM_REF_FRAMES],       // f(3)
     pub allow_high_precision_mv: bool,             // f(1)
     pub interpolation_filter: InterpolationFilter, // interpolation_filter()
     pub is_motion_mode_switchable: bool,           // f(1)
     pub use_ref_frame_mvs: bool,                   // f(1)
     pub disable_frame_end_update_cdf: bool,        // f(1)
+    pub order_hints: [u8; NUM_REF_FRAMES],         // OrderHints
     pub tile_info: TileInfo,                       // tile_info()
     pub allow_warped_motion: bool,                 // f(1)
     pub reduced_tx_set: bool,                      // f(1)
@@ -561,7 +568,7 @@ fn parse_tile_info<R: io::Read>(
             start_sb += size_sb;
             i += 1;
         }
-        // MiRowStarts[ i ] = MiRows
+        // MiRowStarts[i] = MiRows
         ti.tile_rows = i;
         tile_rows_log2 = tile_log2(1, ti.tile_rows as u32);
     }
@@ -721,6 +728,7 @@ pub fn parse_frame_header<R: io::Read>(
     bs: &mut R,
     sz: u32,
     sh: &SequenceHeader,
+    rfman: &mut av1::RefFrameManager,
 ) -> Option<FrameHeader> {
     let mut br = BitReader::new(bs, sz);
     let mut fh = FrameHeader::default();
@@ -731,7 +739,8 @@ pub fn parse_frame_header<R: io::Read>(
     } else {
         0
     } as usize;
-    let all_frames = ((1u32 << NUM_REF_FRAMES) - 1) as u8; // 0xff
+    assert!(NUM_REF_FRAMES <= 8);
+    let all_frames = ((1usize << NUM_REF_FRAMES) - 1) as u8; // 0xff
     let frame_is_intra: bool;
     if sh.reduced_still_picture_header {
         fh.show_existing_frame = false;
@@ -750,7 +759,7 @@ pub fn parse_frame_header<R: io::Read>(
             if sh.frame_id_numbers_present_flag {
                 fh.display_frame_id = br.f::<u16>(id_len)?; // f(idLen)
             }
-            fh.frame_type = 255; //FIXME: RefFrameType[ frame_to_show_map_idx ]
+            fh.frame_type = rfman.ref_frame_type[fh.frame_to_show_map_idx as usize];
             if fh.frame_type == KEY_FRAME {
                 fh.refresh_frame_flags = all_frames;
             }
@@ -779,6 +788,15 @@ pub fn parse_frame_header<R: io::Read>(
             fh.error_resilient_mode = br.f::<bool>(1)?; // f(1)
         }
     }
+    if fh.frame_type == KEY_FRAME && fh.show_frame {
+        for i in 0..NUM_REF_FRAMES {
+            rfman.ref_valid[i] = false;
+            rfman.ref_order_hint[i] = 0;
+        }
+        for i in 0..REFS_PER_FRAME {
+            fh.order_hints[LAST_FRAME + i] = 0;
+        }
+    }
     fh.disable_cdf_update = br.f::<bool>(1)?; // f(1)
     if sh.seq_force_screen_content_tools == SELECT_SCREEN_CONTENT_TOOLS {
         fh.allow_screen_content_tools = br.f::<bool>(1)?; // f(1)
@@ -791,13 +809,16 @@ pub fn parse_frame_header<R: io::Read>(
         } else {
             fh.force_integer_mv = sh.seq_force_integer_mv != 0;
         }
+    } else {
+        fh.force_integer_mv = false;
     }
     if frame_is_intra {
         fh.force_integer_mv = true;
     }
     if sh.frame_id_numbers_present_flag {
+        let _prev_frame_id = fh.current_frame_id;
         fh.current_frame_id = br.f::<u16>(id_len)?; // f(idLen)
-                                                    // mark_ref_frames(idLen)
+        rfman.mark_ref_frames(id_len, sh, &fh);
     } else {
         fh.current_frame_id = 0;
     }
@@ -827,7 +848,12 @@ pub fn parse_frame_header<R: io::Read>(
     }
     if !frame_is_intra || fh.refresh_frame_flags != all_frames {
         if fh.error_resilient_mode && sh.enable_order_hint {
-            unimplemented!("error_resilient_mode && enable_order_hint");
+            for i in 0..NUM_REF_FRAMES {
+                fh.ref_order_hint[i] = br.f::<u8>(sh.order_hint_bits as usize)?; // f(OrderHintBits)
+                if fh.ref_order_hint[i] != rfman.ref_order_hint[i] {
+                    rfman.ref_valid[i] = false;
+                }
+            }
         }
     }
     if fh.frame_type == KEY_FRAME {
@@ -858,14 +884,23 @@ pub fn parse_frame_header<R: io::Read>(
                                                         // set_frame_refs()
                 }
             }
-            for _i in 0..REFS_PER_FRAME {
+            for i in 0..REFS_PER_FRAME {
                 if !fh.frame_refs_short_signaling {
-                    let _ref_frame_idx = br.f::<u8>(3)?; // f(3)
-                                                         // FIXME
+                    fh.ref_frame_idx[i] = br.f::<u8>(3)?; // f(3)
                 }
                 if sh.frame_id_numbers_present_flag {
-                    let _delta_frame_id = br.f::<u8>(sh.delta_frame_id_length as usize); // f(n)
-                                                                                         // FIXME
+                    let delta_frame_id = br.f::<u16>(sh.delta_frame_id_length as usize)? + 1; // f(n)
+                    let expected_frame_id =
+                        (fh.current_frame_id + (1 << id_len) - delta_frame_id) % (1 << id_len);
+
+                    // expectedFrameId[i] specifies the frame id for each frame used for reference.
+                    // It is a requirement of bitstream conformance that whenever expectedFrameId[i] is calculated,
+                    // the value matches RefFrameId[ref_frame_idx[i]] (this contains the value of current_frame_id
+                    // at the time that the frame indexed by ref_frame_idx was stored).
+                    assert_eq!(
+                        expected_frame_id,
+                        rfman.ref_frame_id[fh.ref_frame_idx[i] as usize]
+                    );
                 }
             }
             if fh.frame_size_override_flag && !fh.error_resilient_mode {
@@ -889,7 +924,16 @@ pub fn parse_frame_header<R: io::Read>(
         }
     }
     if !frame_is_intra {
-        // OrderHints[refFrame]
+        for i in 0..REFS_PER_FRAME {
+            let ref_frame = LAST_FRAME + i;
+            let hint = rfman.ref_order_hint[fh.ref_frame_idx[i] as usize];
+            fh.order_hints[ref_frame] = hint;
+            if sh.enable_order_hint {
+                // RefFrameSignBias[refFrame] = 0
+            } else {
+                // RefFrameSignBias[refFrame] = get_relative_dist(hint, OrderHint) > 0
+            }
+        }
     }
     if sh.reduced_still_picture_header || fh.disable_cdf_update {
         fh.disable_frame_end_update_cdf = true;
