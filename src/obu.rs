@@ -18,20 +18,27 @@ pub const OBU_REDUNDANT_FRAME_HEADER: u8 = 7;
 pub const OBU_TILE_LIST: u8 = 8;
 pub const OBU_PADDING: u8 = 15;
 
-use av1::LAST_FRAME;
+use av1::{
+    ALTREF2_FRAME, LAST2_FRAME, LAST3_FRAME, ALTREF_FRAME, BWDREF_FRAME, GOLDEN_FRAME, INTRA_FRAME,
+    LAST_FRAME,
+};
 
-const REFS_PER_FRAME: usize = 3; // Number of reference frames that can be used for inter prediction
+const REFS_PER_FRAME: usize = 7; // Number of reference frames that can be used for inter prediction
+const TOTAL_REFS_PER_FRAME: usize = 8; // Number of reference frame types (including intra type)
 const MAX_TILE_WIDTH: u32 = 4096; // Maximum width of a tile in units of luma samples
 const MAX_TILE_AREA: u32 = 4096 * 2304; // Maximum area of a tile in units of luma samples
 const MAX_TILE_ROWS: u32 = 64; // Maximum number of tile rows
 const MAX_TILE_COLS: u32 = 64; // Maximum number of tile columns
 pub const NUM_REF_FRAMES: usize = 8; // Number of frames that can be stored for future reference
+const MAX_SEGMENTS: usize = 8; // Number of segments allowed in segmentation map
+const SEG_LVL_MAX: usize = 8; // Number of segment features
 const SELECT_SCREEN_CONTENT_TOOLS: u8 = 2; // Value that indicates the allow_screen_content_tools syntax element is coded
 const SELECT_INTEGER_MV: u8 = 2; // Value that indicates the force_integer_mv syntax element is coded
 const PRIMARY_REF_NONE: u8 = 7; // Value of primary_ref_frame indicating that there is no primary reference frame
 const SUPERRES_NUM: usize = 8; // Numerator for upscaling ratio
 const SUPERRES_DENOM_MIN: usize = 9; // Smallest denominator for upscaling ratio
 const SUPERRS_DENOM_BITS: usize = 3; // Number of bits sent to specify denominator of upscaling ratio
+const MAX_LOOP_FILTER: i32 = 63; // Maximum value used for loop filtering
 
 // Color primaries
 const CP_BT_709: u8 = 1; // BT.709
@@ -211,6 +218,18 @@ pub struct InterpolationFilter {
     pub interpolation_filter: u8,   // f(2)
 }
 
+/// Loop filter params
+#[derive(Debug, Default)]
+pub struct LoopFilterParams {
+    // loop_filter_params()
+    pub loop_filter_level: [u8; 4],                          // f(6)
+    pub loop_filter_sharpness: u8,                           // f(3)
+    pub loop_filter_delta_enabled: bool,                     // f(1)
+    pub loop_filter_delta_update: bool,                      // f(1)
+    pub loop_filter_ref_deltas: [i32; TOTAL_REFS_PER_FRAME], // su(1+6)
+    pub loop_filter_mode_deltas: [i32; 2],                   // su(1+6)
+}
+
 /// Tile info
 #[derive(Debug, Default)]
 pub struct TileInfo {
@@ -238,6 +257,45 @@ pub struct QuantizationParams {
     pub qm_y: u8,            // f(4)
     pub qm_u: u8,            // f(4)
     pub qm_v: u8,            // f(4)
+}
+
+/// Segmentation params
+#[derive(Debug, Default)]
+pub struct SegmentationParams {
+    // segmentation_params()
+    pub segmentation_enabled: bool,         // f(1)
+    pub segmentation_update_map: bool,      // f(1)
+    pub segmentation_temporal_update: bool, // f(1)
+    pub segmentation_update_data: bool,     // f(1)
+}
+
+/// Quantizer index delta parameters
+#[derive(Debug, Default)]
+pub struct DeltaQParams {
+    // delta_q_params()
+    pub delta_q_present: bool, // f(1)
+    pub delta_q_res: u8,       // f(2)
+}
+
+/// Loop filter delta parameters
+#[derive(Debug, Default)]
+pub struct DeltaLfParams {
+    // delta_lf_params()
+    pub delta_lf_present: bool, // f(1)
+    pub delta_lf_res: u8,       // f(2)
+    pub delta_lf_multi: bool,   // f(1)
+}
+
+/// CDEF params
+#[derive(Debug, Default)]
+pub struct CdefParams {
+    // cdef_params()
+    pub cdef_damping: u8,              // f(2)
+    pub cdef_bits: u8,                 // f(2)
+    pub cdef_y_pri_strength: [u8; 8],  // f(4)
+    pub cdef_y_sec_strength: [u8; 8],  // f(2)
+    pub cdef_uv_pri_strength: [u8; 8], // f(4)
+    pub cdef_uv_sec_strength: [u8; 8], // f(2)
 }
 
 ///
@@ -277,6 +335,11 @@ pub struct FrameHeader {
     pub order_hints: [u8; NUM_REF_FRAMES],         // OrderHints
     pub tile_info: TileInfo,                       // tile_info()
     pub quantization_params: QuantizationParams,   // quantization_params()
+    pub segmentation_params: SegmentationParams,   // segmentation_params()
+    pub delta_q_params: DeltaQParams,              // delta_q_params()
+    pub delta_lf_params: DeltaLfParams,            // delta_lf_params()
+    pub loop_filter_params: LoopFilterParams,      // loop_filter_params()
+    pub cdef_params: CdefParams,                   // cdef_params()
     pub allow_warped_motion: bool,                 // f(1)
     pub reduced_tx_set: bool,                      // f(1)
 }
@@ -446,6 +509,64 @@ fn parse_interpolation_filter<R: io::Read>(br: &mut BitReader<R>) -> Option<Inte
     }
 
     Some(ifp)
+}
+
+///
+/// parse loop_filter_params()
+///
+fn parse_loop_filter_params<R: io::Read>(
+    br: &mut BitReader<R>,
+    cc: &ColorConfig,
+    fh: &FrameHeader,
+) -> Option<LoopFilterParams> {
+    let mut lfp = LoopFilterParams::default();
+
+    let coded_lossless = false; // FIXME
+    if coded_lossless || fh.allow_intrabc {
+        lfp.loop_filter_level[0] = 0;
+        lfp.loop_filter_level[1] = 0;
+        lfp.loop_filter_ref_deltas[INTRA_FRAME] = 1;
+        lfp.loop_filter_ref_deltas[LAST_FRAME] = 0;
+        lfp.loop_filter_ref_deltas[LAST2_FRAME] = 0;
+        lfp.loop_filter_ref_deltas[LAST3_FRAME] = 0;
+        lfp.loop_filter_ref_deltas[BWDREF_FRAME] = 0;
+        lfp.loop_filter_ref_deltas[GOLDEN_FRAME] = -1;
+        lfp.loop_filter_ref_deltas[ALTREF_FRAME] = -1;
+        lfp.loop_filter_ref_deltas[ALTREF2_FRAME] = -1;
+        for i in 0..2 {
+            lfp.loop_filter_mode_deltas[i] = 0;
+        }
+        return Some(lfp);
+    }
+    lfp.loop_filter_level[0] = br.f::<u8>(6)?; // f(6)
+    lfp.loop_filter_level[1] = br.f::<u8>(6)?; // f(6)
+    if cc.num_planes > 1 {
+        if lfp.loop_filter_level[0] != 0 || lfp.loop_filter_level[1] != 0 {
+            lfp.loop_filter_level[2] = br.f::<u8>(6)?; // f(6)
+            lfp.loop_filter_level[3] = br.f::<u8>(6)?; // f(6)
+        }
+    }
+    lfp.loop_filter_sharpness = br.f::<u8>(3)?; // f(3)
+    lfp.loop_filter_delta_enabled = br.f::<bool>(1)?; // f(1)
+    if lfp.loop_filter_delta_enabled {
+        lfp.loop_filter_delta_update = br.f::<bool>(1)?; // f(1)
+        if lfp.loop_filter_delta_update {
+            for i in 0..TOTAL_REFS_PER_FRAME {
+                let update_ref_delta = br.f::<bool>(1)?; // f(1)
+                if update_ref_delta {
+                    lfp.loop_filter_ref_deltas[i] = br.su(1 + 6)?; // su(1+6)
+                }
+            }
+            for i in 0..2 {
+                let update_mode_delta = br.f::<bool>(1)?; // f(1)
+                if update_mode_delta {
+                    lfp.loop_filter_mode_deltas[i] = br.su(1 + 6)?; // su(1+6)
+                }
+            }
+        }
+    }
+
+    Some(lfp)
 }
 
 ///
@@ -662,6 +783,163 @@ fn read_delta_q<R: io::Read>(br: &mut BitReader<R>) -> Option<i32> {
     }
 
     Some(delta_q as i32)
+}
+
+///
+/// parse segmentation_params()
+///
+fn parse_segmentation_params<R: io::Read>(
+    br: &mut BitReader<R>,
+    fh: &FrameHeader,
+) -> Option<SegmentationParams> {
+    let mut sp = SegmentationParams::default();
+
+    #[allow(non_upper_case_globals)]
+    const Segmentation_Feature_Bits: [usize; SEG_LVL_MAX] = [8, 6, 6, 6, 6, 3, 0, 0];
+    #[allow(non_upper_case_globals)]
+    const Segmentation_Feature_Signed: [usize; SEG_LVL_MAX] = [1, 1, 1, 1, 1, 0, 0, 0];
+    #[allow(non_upper_case_globals)]
+    const Segmentation_Feature_Max: [i32; SEG_LVL_MAX] = [
+        255,
+        MAX_LOOP_FILTER,
+        MAX_LOOP_FILTER,
+        MAX_LOOP_FILTER,
+        MAX_LOOP_FILTER,
+        7,
+        0,
+        0,
+    ];
+
+    sp.segmentation_enabled = br.f::<bool>(1)?; // f(1)
+    if sp.segmentation_enabled {
+        if fh.primary_ref_frame == PRIMARY_REF_NONE {
+            sp.segmentation_update_map = true;
+            sp.segmentation_temporal_update = false;
+            sp.segmentation_update_data = true;
+        } else {
+            sp.segmentation_update_map = br.f::<bool>(1)?; // f(1)
+            if sp.segmentation_update_map {
+                sp.segmentation_temporal_update = br.f::<bool>(1)?; // f(1)
+            }
+            sp.segmentation_update_data = br.f::<bool>(1)?; // f(1)
+        }
+        if sp.segmentation_update_data {
+            for i in 0..MAX_SEGMENTS {
+                for j in 0..SEG_LVL_MAX {
+                    let feature_value;
+                    let feature_enabled = br.f::<bool>(1)?; // f(1)
+
+                    // FeatureEnabled[i][j] = feature_enabled
+                    let mut clipped_value = 0;
+                    if feature_enabled {
+                        let bits_to_read = Segmentation_Feature_Bits[i];
+                        let limit = Segmentation_Feature_Max[j];
+                        if Segmentation_Feature_Signed[j] == 1 {
+                            feature_value = br.su(1 + bits_to_read)?; // su(1+bitsToRead)
+                            clipped_value = cmp::max(-limit, cmp::min(limit, feature_value));
+                        } else {
+                            feature_value = br.f::<u32>(bits_to_read)? as i32; // f(bitsToRead)
+                            clipped_value = cmp::max(0, cmp::min(limit, feature_value));
+                        }
+                    }
+                    let _ = clipped_value; // FeatureData[i][j] = clippedValue
+                }
+            }
+        }
+    } else {
+        // FeatureEnabled[i][j] = 0
+        // FeatureData[i][j] = 0
+    }
+    // SegIdPreSkip
+    // LastActiveSegId
+
+    Some(sp)
+}
+
+///
+/// parse delta_q_params()
+///
+fn parse_delta_q_params<R: io::Read>(
+    br: &mut BitReader<R>,
+    qp: &QuantizationParams,
+) -> Option<DeltaQParams> {
+    let mut dqp = DeltaQParams::default();
+
+    dqp.delta_q_res = 0;
+    dqp.delta_q_present = false;
+    if qp.base_q_idx > 0 {
+        dqp.delta_q_present = br.f::<bool>(1)?; // f(1)
+    }
+    if dqp.delta_q_present {
+        dqp.delta_q_res = br.f::<u8>(2)?; // f(2)
+    }
+
+    Some(dqp)
+}
+
+///
+/// parse delta_lf_params()
+///
+fn parse_delta_lf_params<R: io::Read>(
+    br: &mut BitReader<R>,
+    fh: &FrameHeader,
+) -> Option<DeltaLfParams> {
+    let mut dlfp = DeltaLfParams::default();
+
+    dlfp.delta_lf_present = false;
+    dlfp.delta_lf_res = 0;
+    dlfp.delta_lf_multi = false;
+    if fh.delta_q_params.delta_q_present {
+        if !fh.allow_intrabc {
+            dlfp.delta_lf_present = br.f::<bool>(1)?; // f(1)
+        }
+        if dlfp.delta_lf_present {
+            dlfp.delta_lf_res = br.f::<u8>(2)?; // f(2)
+            dlfp.delta_lf_multi = br.f::<bool>(1)?; // f(1)
+        }
+    }
+
+    Some(dlfp)
+}
+
+///
+/// parse cdef_params()
+///
+fn parse_cdef_params<R: io::Read>(
+    br: &mut BitReader<R>,
+    sh: &SequenceHeader,
+    fh: &FrameHeader,
+) -> Option<CdefParams> {
+    let mut cdefp = CdefParams::default();
+
+    let coded_lossless = false; // FIXME
+    if coded_lossless || fh.allow_intrabc || !sh.enable_cdef {
+        cdefp.cdef_bits = 0;
+        cdefp.cdef_y_pri_strength[0] = 0;
+        cdefp.cdef_y_sec_strength[0] = 0;
+        cdefp.cdef_uv_pri_strength[0] = 0;
+        cdefp.cdef_uv_sec_strength[0] = 0;
+        cdefp.cdef_damping = 3;
+        return Some(cdefp);
+    }
+    cdefp.cdef_damping = br.f::<u8>(2)? + 3; // f(2)
+    cdefp.cdef_bits = br.f::<u8>(2)?; // f(2)
+    for i in 0..(1 << cdefp.cdef_bits) {
+        cdefp.cdef_y_pri_strength[i] = br.f::<u8>(4)?; // f(4)
+        cdefp.cdef_y_sec_strength[i] = br.f::<u8>(2)?; // f(2)
+        if cdefp.cdef_y_sec_strength[i] == 3 {
+            cdefp.cdef_y_sec_strength[i] += 1;
+        }
+        if sh.color_config.num_planes > 1 {
+            cdefp.cdef_uv_pri_strength[i] = br.f::<u8>(4)?; // f(4)
+            cdefp.cdef_uv_sec_strength[i] = br.f::<u8>(2)?; // f(2)
+            if cdefp.cdef_uv_sec_strength[i] == 3 {
+                cdefp.cdef_uv_sec_strength[i] += 1;
+            }
+        }
+    }
+
+    Some(cdefp)
 }
 
 ///
@@ -1034,10 +1312,9 @@ pub fn parse_frame_header<R: io::Read>(
     }
     fh.tile_info = parse_tile_info(&mut br, sh, &fh.frame_size)?; // tile_info()
     fh.quantization_params = parse_quantization_params(&mut br, &sh.color_config)?; // quantization_params()
-
-    // segmentation_params()
-    // delta_q_params()
-    // delta_lf_params()
+    fh.segmentation_params = parse_segmentation_params(&mut br, &fh)?; // segmentation_params()
+    fh.delta_q_params = parse_delta_q_params(&mut br, &fh.quantization_params)?; // delta_q_params()
+    fh.delta_lf_params = parse_delta_lf_params(&mut br, &fh)?; // delta_lf_params()
     if fh.primary_ref_frame == PRIMARY_REF_NONE {
         // init_coeff_cdfs()
     } else {
@@ -1046,8 +1323,9 @@ pub fn parse_frame_header<R: io::Read>(
     // {
     //   SegQMLevel[][]
     // }
-    // loop_filter_params()
-    // cdef_params()
+    fh.loop_filter_params = parse_loop_filter_params(&mut br, &sh.color_config, &fh)?; // loop_filter_params()
+    fh.cdef_params = parse_cdef_params(&mut br, sh, &fh)?; // cdef_params()
+
     // lr_params()
     // read_tx_mode()
     // frame_reference_mode()
