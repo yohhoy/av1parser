@@ -572,7 +572,7 @@ fn parse_tile_info<R: io::Read>(
         ti.tile_rows = i;
         tile_rows_log2 = tile_log2(1, ti.tile_rows as u32);
     }
-    if tile_cols_log2 > 0 && tile_rows_log2 > 0 {
+    if tile_cols_log2 > 0 || tile_rows_log2 > 0 {
         ti.context_update_tile_id = br.f::<u32>(tile_cols_log2 + tile_rows_log2)?; // f(TileRowsLog2+TileColsLog2)
         ti.tile_size_bytes = br.f::<usize>(2)? + 1; // f(2)
     } else {
