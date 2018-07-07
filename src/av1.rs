@@ -1,7 +1,6 @@
 //
 // https://aomedia.org/av1-bitstream-and-decoding-process-specification/
 //
-#![allow(dead_code)]
 use obu;
 
 use obu::NUM_REF_FRAMES;

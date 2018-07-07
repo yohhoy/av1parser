@@ -1,7 +1,6 @@
 //
 // https://aomedia.org/av1-bitstream-and-decoding-process-specification/
 //
-#![allow(dead_code)]
 use av1;
 use bitio::BitReader;
 use std::cmp;
@@ -52,9 +51,12 @@ const TC_SRGB: u8 = 13; // sRGB or sYCC
 const MC_IDENTITY: u8 = 0; // Identity matrix
 const MC_UNSPECIFIED: u8 = 2; // Unspecified
 
+// Chroma sample position
+const CSP_UNKNOWN: u8 = 0; // Unknown (in this case the source video transfer function must be signaled outside the AV1 bitstream)
+
 // Frame type
 const KEY_FRAME: u8 = 0;
-const INTER_FRAME: u8 = 1;
+//const INTER_FRAME: u8 = 1;
 const INTRA_ONLY_FRAME: u8 = 2;
 const SWITCH_FRAME: u8 = 3;
 
@@ -117,6 +119,8 @@ pub struct ColorConfig {
     pub transfer_characteristics: u8,         // f(8)
     pub matrix_coefficients: u8,              // f(8)
     pub color_range: bool,                    // f(1)
+    pub subsampling_x: u8,                    // f(1)
+    pub subsampling_y: u8,                    // f(1)
     pub chroma_sample_position: u8,           // f(2)
     pub separate_uv_delta_q: bool,            // f(1)
 }
@@ -172,9 +176,7 @@ pub struct SequenceHeader {
     pub enable_order_hint: bool,                  // f(1)
     pub enable_jnt_comp: bool,                    // f(1)
     pub enable_ref_frame_mvs: bool,               // f(1)
-    pub seq_choose_screen_content_tools: bool,    // f(1)
     pub seq_force_screen_content_tools: u8,       // f(1)
-    pub seq_choose_integer_mv: u8,                // f(1)
     pub seq_force_integer_mv: u8,                 // f(1)
     pub order_hint_bits: u8,                      // f(3)
     pub enable_superres: bool,                    // f(1)
@@ -249,7 +251,6 @@ pub struct QuantizationParams {
     pub deltaq_u_ac: i32, // DeltaQUAc
     pub deltaq_v_dc: i32, // DeltaQVDc
     pub deltaq_v_ac: i32, // DeltaQVAc
-
     // quantization_params()
     pub base_q_idx: u8,      // f(8)
     pub diff_uv_delta: bool, // f(1)
@@ -323,7 +324,6 @@ pub struct FrameHeader {
     pub frame_size: FrameSize,                     // frame_size()
     pub render_size: RenderSize,                   // render_size()
     pub allow_intrabc: bool,                       // f(1)
-    pub frame_refs_short_signaling: bool,          // f(1)
     pub last_frame_idx: u8,                        // f(3)
     pub gold_frame_idx: u8,                        // f(3)
     pub ref_frame_idx: [u8; NUM_REF_FRAMES],       // f(3)
@@ -338,6 +338,7 @@ pub struct FrameHeader {
     pub segmentation_params: SegmentationParams,   // segmentation_params()
     pub delta_q_params: DeltaQParams,              // delta_q_params()
     pub delta_lf_params: DeltaLfParams,            // delta_lf_params()
+    pub coded_lossless: bool,                      // CodedLossless
     pub loop_filter_params: LoopFilterParams,      // loop_filter_params()
     pub cdef_params: CdefParams,                   // cdef_params()
     pub allow_warped_motion: bool,                 // f(1)
@@ -420,6 +421,9 @@ fn parse_color_config<R: io::Read>(
     }
     if cc.mono_chrome {
         cc.color_range = br.f::<bool>(1)?; // f(1)
+        cc.subsampling_x = 1;
+        cc.subsampling_y = 1;
+        cc.chroma_sample_position = CSP_UNKNOWN;
         cc.separate_uv_delta_q = false;
         return Some(cc);
     } else if cc.color_primaries == CP_BT_709
@@ -427,25 +431,31 @@ fn parse_color_config<R: io::Read>(
         && cc.matrix_coefficients == MC_IDENTITY
     {
         cc.color_range = true;
+        cc.subsampling_x = 0;
+        cc.subsampling_y = 0;
         return Some(cc);
     } else {
-        let (subsampling_x, subsampling_y);
         cc.color_range = br.f::<bool>(1)?; // f(1)
         if sh.seq_profile == 0 {
-            subsampling_x = 1;
-            subsampling_y = 1;
+            cc.subsampling_x = 1;
+            cc.subsampling_y = 1;
         } else if sh.seq_profile == 1 {
-            subsampling_x = 0;
-            subsampling_y = 0;
+            cc.subsampling_x = 0;
+            cc.subsampling_y = 0;
         } else {
             if cc.bit_depth == 12 {
-                unimplemented!("BitDepth==12");
+                cc.subsampling_x = br.f::<u8>(1)?; // f(1)
+                if cc.subsampling_x != 0 {
+                    cc.subsampling_y = br.f::<u8>(1)?; // f(1)
+                } else {
+                    cc.subsampling_y = 0;
+                }
             } else {
-                subsampling_x = 1;
-                subsampling_y = 0;
+                cc.subsampling_x = 1;
+                cc.subsampling_y = 0;
             }
         }
-        if subsampling_x != 0 && subsampling_y != 0 {
+        if cc.subsampling_x != 0 && cc.subsampling_y != 0 {
             cc.chroma_sample_position = br.f::<u8>(2)?; // f(2)
         }
     }
@@ -521,8 +531,7 @@ fn parse_loop_filter_params<R: io::Read>(
 ) -> Option<LoopFilterParams> {
     let mut lfp = LoopFilterParams::default();
 
-    let coded_lossless = false; // FIXME
-    if coded_lossless || fh.allow_intrabc {
+    if fh.coded_lossless || fh.allow_intrabc {
         lfp.loop_filter_level[0] = 0;
         lfp.loop_filter_level[1] = 0;
         lfp.loop_filter_ref_deltas[INTRA_FRAME] = 1;
@@ -912,8 +921,7 @@ fn parse_cdef_params<R: io::Read>(
 ) -> Option<CdefParams> {
     let mut cdefp = CdefParams::default();
 
-    let coded_lossless = false; // FIXME
-    if coded_lossless || fh.allow_intrabc || !sh.enable_cdef {
+    if fh.coded_lossless || fh.allow_intrabc || !sh.enable_cdef {
         cdefp.cdef_bits = 0;
         cdefp.cdef_y_pri_strength[0] = 0;
         cdefp.cdef_y_sec_strength[0] = 0;
@@ -991,7 +999,16 @@ pub fn parse_sequence_header<R: io::Read>(bs: &mut R, sz: u32) -> Option<Sequenc
     sh.still_picture = br.f::<bool>(1)?; // f(1)
     sh.reduced_still_picture_header = br.f::<bool>(1)?; // f(1)
     if sh.reduced_still_picture_header {
-        unimplemented!("reduced_still_picture_header==1");
+        sh.timing_info_present_flag = false;
+        sh.decoder_model_info_present_flag = false;
+        sh.initial_display_delay_present_flag = false;
+        sh.operating_points_cnt_minus_1 = 0;
+        sh.op[0].operating_point_idc = 0;
+        sh.op[0].seq_level_idx = br.f::<u8>(5)?; // f(5)
+        sh.op[0].seq_tier = 0;
+        // decoder_model_present_for_this_op[0] = 0
+        // initial_display_delay_present_for_this_op[0] = 0
+        assert!(true);
     } else {
         sh.timing_info_present_flag = br.f::<bool>(1)?; // f(1)
         if sh.timing_info_present_flag {
@@ -1018,6 +1035,8 @@ pub fn parse_sequence_header<R: io::Read>(bs: &mut R, sz: u32) -> Option<Sequenc
             }
         }
     }
+    // operatingPoint = choose_operating_point()
+    // OperatingPointIdc = operating_point_idc[operatingPoint]
     sh.frame_width_bits = br.f::<u8>(4)? + 1; // f(4)
     sh.frame_height_bits = br.f::<u8>(4)? + 1; // f(4)
     sh.max_frame_width = br.f::<u32>(sh.frame_width_bits as usize)? + 1; // f(n)
@@ -1035,7 +1054,16 @@ pub fn parse_sequence_header<R: io::Read>(bs: &mut R, sz: u32) -> Option<Sequenc
     sh.enable_filter_intra = br.f::<bool>(1)?; // f(1)
     sh.enable_intra_edge_filter = br.f::<bool>(1)?; // f(1)
     if sh.reduced_still_picture_header {
-        unimplemented!("reduced_still_picture_header==1");
+        sh.enable_interintra_compound = false;
+        sh.enable_masked_compound = false;
+        sh.enable_warped_motion = false;
+        sh.enable_dual_filter = false;
+        sh.enable_order_hint = false;
+        sh.enable_jnt_comp = false;
+        sh.enable_ref_frame_mvs = false;
+        sh.seq_force_screen_content_tools = SELECT_SCREEN_CONTENT_TOOLS;
+        sh.seq_force_integer_mv = SELECT_INTEGER_MV;
+        sh.order_hint_bits = 0;
     } else {
         sh.enable_interintra_compound = br.f::<bool>(1)?; // f(1)
         sh.enable_masked_compound = br.f::<bool>(1)?; // f(1)
@@ -1049,15 +1077,15 @@ pub fn parse_sequence_header<R: io::Read>(bs: &mut R, sz: u32) -> Option<Sequenc
             sh.enable_jnt_comp = false;
             sh.enable_ref_frame_mvs = false;
         }
-        sh.seq_choose_screen_content_tools = br.f::<bool>(1)?; // f(1)
-        if sh.seq_choose_screen_content_tools {
+        let seq_choose_screen_content_tools = br.f::<bool>(1)?; // f(1)
+        if seq_choose_screen_content_tools {
             sh.seq_force_screen_content_tools = SELECT_SCREEN_CONTENT_TOOLS;
         } else {
             sh.seq_force_screen_content_tools = br.f::<u8>(1)?; // f(1)
         }
         if sh.seq_force_screen_content_tools > 0 {
-            sh.seq_choose_integer_mv = br.f::<u8>(1)?; // f(1)
-            if sh.seq_choose_integer_mv > 0 {
+            let seq_choose_integer_mv = br.f::<u8>(1)?; // f(1)
+            if seq_choose_integer_mv > 0 {
                 sh.seq_force_integer_mv = SELECT_INTEGER_MV;
             } else {
                 sh.seq_force_integer_mv = br.f::<u8>(1)?; // f(1)
@@ -1099,6 +1127,7 @@ pub fn parse_frame_header<R: io::Read>(
     } else {
         0
     } as usize;
+    assert!(id_len <= 16);
     assert!(NUM_REF_FRAMES <= 8);
     let all_frames = ((1usize << NUM_REF_FRAMES) - 1) as u8; // 0xff
     let frame_is_intra: bool;
@@ -1234,19 +1263,26 @@ pub fn parse_frame_header<R: io::Read>(
                 fh.allow_intrabc = br.f::<bool>(1)?; // f(1)
             }
         } else {
+            let frame_refs_short_signaling;
             if !sh.enable_order_hint {
-                fh.frame_refs_short_signaling = false;
+                frame_refs_short_signaling = false;
             } else {
-                fh.frame_refs_short_signaling = br.f::<bool>(1)?; // f(1)
-                if fh.frame_refs_short_signaling {
+                frame_refs_short_signaling = br.f::<bool>(1)?; // f(1)
+                if frame_refs_short_signaling {
                     fh.last_frame_idx = br.f::<u8>(3)?; // f(3)
                     fh.gold_frame_idx = br.f::<u8>(3)?; // f(3)
-                                                        // set_frame_refs()
+                    unimplemented!("set_frame_refs()");
                 }
             }
             for i in 0..REFS_PER_FRAME {
-                if !fh.frame_refs_short_signaling {
+                if !frame_refs_short_signaling {
                     fh.ref_frame_idx[i] = br.f::<u8>(3)?; // f(3)
+
+                    // ref_frame_idx[i] specifies which reference frames are used by inter frames.
+                    // It is a requirement of bitstream conformance that RefValid[ref_frame_idx[i]] is equal to 1,
+                    // and that the selected reference frames match the current frame in bit depth, profile,
+                    // chroma subsampling, and color space.
+                    assert!(rfman.ref_valid[fh.ref_frame_idx[i] as usize]);
                 }
                 if sh.frame_id_numbers_present_flag {
                     let delta_frame_id = br.f::<u16>(sh.delta_frame_id_length as usize)? + 1; // f(n)
@@ -1320,9 +1356,12 @@ pub fn parse_frame_header<R: io::Read>(
     } else {
         // load_previous_segment_ids()
     }
-    // {
-    //   SegQMLevel[][]
-    // }
+    fh.coded_lossless = false; // FIXME: assume lossy coding
+    for _segment_id in 0..MAX_SEGMENTS {
+        // CodedLossless
+        // SegQMLevel[][segmentId]
+    }
+    // AllLossless
     fh.loop_filter_params = parse_loop_filter_params(&mut br, &sh.color_config, &fh)?; // loop_filter_params()
     fh.cdef_params = parse_cdef_params(&mut br, sh, &fh)?; // cdef_params()
 
