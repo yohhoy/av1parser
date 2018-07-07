@@ -101,7 +101,8 @@ impl fmt::Display for Obu {
 // Color config
 #[derive(Debug, Default)]
 pub struct ColorConfig {
-    pub bit_depth: u8, // BitDepth
+    pub bit_depth: u8,  // BitDepth
+    pub num_planes: u8, // NumPlanes
     // color_config()
     pub mono_chrome: bool,                    // f(1)
     pub color_description_present_flag: bool, // f(1)
@@ -221,6 +222,24 @@ pub struct TileInfo {
     pub tile_size_bytes: usize,          // TileSizeBytes
 }
 
+/// Quantization params
+#[derive(Debug, Default)]
+pub struct QuantizationParams {
+    pub deltaq_y_dc: i32, // DeltaQYDc
+    pub deltaq_u_dc: i32, // DeltaQUDc
+    pub deltaq_u_ac: i32, // DeltaQUAc
+    pub deltaq_v_dc: i32, // DeltaQVDc
+    pub deltaq_v_ac: i32, // DeltaQVAc
+
+    // quantization_params()
+    pub base_q_idx: u8,      // f(8)
+    pub diff_uv_delta: bool, // f(1)
+    pub using_qmatrix: bool, // f(1)
+    pub qm_y: u8,            // f(4)
+    pub qm_u: u8,            // f(4)
+    pub qm_v: u8,            // f(4)
+}
+
 ///
 /// Frame header OBU
 ///
@@ -257,6 +276,7 @@ pub struct FrameHeader {
     pub disable_frame_end_update_cdf: bool,        // f(1)
     pub order_hints: [u8; NUM_REF_FRAMES],         // OrderHints
     pub tile_info: TileInfo,                       // tile_info()
+    pub quantization_params: QuantizationParams,   // quantization_params()
     pub allow_warped_motion: bool,                 // f(1)
     pub reduced_tx_set: bool,                      // f(1)
 }
@@ -324,6 +344,7 @@ fn parse_color_config<R: io::Read>(
     } else {
         cc.mono_chrome = br.f::<bool>(1)?; // f(1)
     }
+    cc.num_planes = if cc.mono_chrome { 1 } else { 3 };
     cc.color_description_present_flag = br.f::<bool>(1)?; // f(1)
     if cc.color_description_present_flag {
         cc.color_primaries = br.f::<u8>(8)?; // f(8)
@@ -545,7 +566,8 @@ fn parse_tile_info<R: io::Read>(
         while start_sb < sb_cols {
             // MiColStarts[i] = startSb << sbShift
             let max_width = cmp::min(sb_cols - start_sb, max_tile_width_sb);
-            let size_sb = br.ns(max_width)? + 1; // ns(maxWidth)
+            let width_in_sbs = br.ns(max_width)? + 1; // ns(maxWidth)
+            let size_sb = width_in_sbs;
             widest_tile_sb = cmp::max(size_sb, widest_tile_sb);
             start_sb += size_sb;
             i += 1;
@@ -564,7 +586,8 @@ fn parse_tile_info<R: io::Read>(
         while start_sb < sb_rows {
             // MiRowStarts[i] = startSb << sbShift
             let max_height = cmp::min(sb_rows - start_sb, max_tile_height_sb);
-            let size_sb = br.ns(max_height)? + 1; // ns(maxHeight)
+            let height_in_sbs = br.ns(max_height)? + 1; // ns(maxHeight)
+            let size_sb = height_in_sbs;
             start_sb += size_sb;
             i += 1;
         }
@@ -580,6 +603,65 @@ fn parse_tile_info<R: io::Read>(
     }
 
     Some(ti)
+}
+
+///
+/// parse quantization_params()
+///
+fn parse_quantization_params<R: io::Read>(
+    br: &mut BitReader<R>,
+    cc: &ColorConfig,
+) -> Option<QuantizationParams> {
+    let mut qp = QuantizationParams::default();
+
+    qp.base_q_idx = br.f::<u8>(8)?; // f(8)
+    qp.deltaq_y_dc = read_delta_q(br)?; // read_delta_q()
+    if cc.num_planes > 1 {
+        if cc.separate_uv_delta_q {
+            qp.diff_uv_delta = br.f::<bool>(1)?; // f(1)
+        } else {
+            qp.diff_uv_delta = false;
+        }
+        qp.deltaq_u_dc = read_delta_q(br)?; // read_delta_q()
+        qp.deltaq_u_ac = read_delta_q(br)?; // read_delta_q()
+        if qp.diff_uv_delta {
+            qp.deltaq_v_dc = read_delta_q(br)?; // read_delta_q()
+            qp.deltaq_v_ac = read_delta_q(br)?; // read_delta_q()
+        } else {
+            qp.deltaq_v_dc = qp.deltaq_u_dc;
+            qp.deltaq_v_ac = qp.deltaq_u_ac;
+        }
+    } else {
+        qp.deltaq_u_dc = 0;
+        qp.deltaq_u_ac = 0;
+        qp.deltaq_v_dc = 0;
+        qp.deltaq_v_ac = 0;
+    }
+    qp.using_qmatrix = br.f::<bool>(1)?; // f(1)
+    if qp.using_qmatrix {
+        qp.qm_y = br.f::<u8>(4)?; // f(4)
+        qp.qm_u = br.f::<u8>(4)?; // f(4)
+        if !cc.separate_uv_delta_q {
+            qp.qm_v = qp.qm_u;
+        } else {
+            qp.qm_v = br.f::<u8>(4)?; // f(4)
+        }
+    }
+
+    Some(qp)
+}
+
+/// Delta quantizer
+fn read_delta_q<R: io::Read>(br: &mut BitReader<R>) -> Option<i32> {
+    let delta_coded = br.f::<bool>(1)?; // f(1)
+    let delta_q;
+    if delta_coded {
+        delta_q = br.su(1 + 6)?; // su(1+6)
+    } else {
+        delta_q = 0;
+    }
+
+    Some(delta_q as i32)
 }
 
 ///
@@ -951,8 +1033,8 @@ pub fn parse_frame_header<R: io::Read>(
         // motion_field_estimation()
     }
     fh.tile_info = parse_tile_info(&mut br, sh, &fh.frame_size)?; // tile_info()
+    fh.quantization_params = parse_quantization_params(&mut br, &sh.color_config)?; // quantization_params()
 
-    // quantization_params()
     // segmentation_params()
     // delta_q_params()
     // delta_lf_params()
