@@ -33,6 +33,7 @@ const MAX_SEGMENTS: usize = 8; // Number of segments allowed in segmentation map
 const SEG_LVL_MAX: usize = 8; // Number of segment features
 const SELECT_SCREEN_CONTENT_TOOLS: u8 = 2; // Value that indicates the allow_screen_content_tools syntax element is coded
 const SELECT_INTEGER_MV: u8 = 2; // Value that indicates the force_integer_mv syntax element is coded
+const RESTORATION_TILESIZE_MAX: usize = 256; // Maximum size of a loop restoration tile
 const PRIMARY_REF_NONE: u8 = 7; // Value of primary_ref_frame indicating that there is no primary reference frame
 const SUPERRES_NUM: usize = 8; // Numerator for upscaling ratio
 const SUPERRES_DENOM_MIN: usize = 9; // Smallest denominator for upscaling ratio
@@ -62,6 +63,17 @@ const SWITCH_FRAME: u8 = 3;
 
 // interpolation_filter
 const SWITCHABLE: u8 = 4;
+
+// Loop restoration type (FrameRestorationType, not lr_type)
+const RESTORE_NONE: u8 = 0;
+const RESTORE_SWITCHABLE: u8 = 3;
+const RESTORE_WIENER: u8 = 1;
+const RESTORE_SGRPROJ: u8 = 2;
+
+// TxMode
+const ONLY_4X4: u8 = 0;
+const TX_MODE_LARGEST: u8 = 1;
+const TX_MODE_SELECT: u8 = 2;
 
 ///
 /// OBU(Open Bitstream Unit)
@@ -199,9 +211,8 @@ pub struct FrameSize {
 #[derive(Debug, Default)]
 pub struct RenderSize {
     // render_size()
-    pub render_and_frame_size_different: bool, // f(1)
-    pub render_width: u32,                     // RenderWidth
-    pub render_height: u32,                    // RenderHeight
+    pub render_width: u32,  // RenderWidth
+    pub render_height: u32, // RenderHeight
 }
 
 /// Superres params
@@ -210,14 +221,6 @@ pub struct SuperresParams {
     // superres_params()
     pub use_superres: bool,  // f(1)
     pub upscaled_width: u32, // UpscaledWidth
-}
-
-/// Interpolation filter
-#[derive(Debug, Default)]
-pub struct InterpolationFilter {
-    // read_interpolation_filter()
-    pub is_filter_switchable: bool, // f(1)
-    pub interpolation_filter: u8,   // f(2)
 }
 
 /// Loop filter params
@@ -299,50 +302,62 @@ pub struct CdefParams {
     pub cdef_uv_sec_strength: [u8; 8], // f(2)
 }
 
+/// Loop restoration params
+#[derive(Debug, Default)]
+pub struct LrParams {
+    pub uses_lr: bool,                   // UsesLr
+    pub frame_restoration_type: [u8; 3], // FrameRestorationType[]
+    pub loop_restoration_size: [u8; 3],  // LoopRestorationSize[]
+}
+
 ///
 /// Frame header OBU
 ///
 #[derive(Debug, Default)]
 pub struct FrameHeader {
     // uncompressed_header()
-    pub show_existing_frame: bool,                 // f(1)
-    pub frame_to_show_map_idx: u8,                 // f(3)
-    pub display_frame_id: u16,                     // f(idLen)
-    pub frame_type: u8,                            // f(2)
-    pub show_frame: bool,                          // f(1)
-    pub showable_frame: bool,                      // f(1)
-    pub error_resilient_mode: bool,                // f(1)
-    pub disable_cdf_update: bool,                  // f(1)
-    pub allow_screen_content_tools: bool,          // f(1)
-    pub force_integer_mv: bool,                    // f(1)
-    pub current_frame_id: u16,                     // f(idLen)
-    pub frame_size_override_flag: bool,            // f(1)
-    pub order_hint: u8,                            // f(OrderHintBits)
-    pub primary_ref_frame: u8,                     // f(3)
-    pub refresh_frame_flags: u8,                   // f(8)
-    pub ref_order_hint: [u8; NUM_REF_FRAMES],      // f(OrderHintBits)
-    pub frame_size: FrameSize,                     // frame_size()
-    pub render_size: RenderSize,                   // render_size()
-    pub allow_intrabc: bool,                       // f(1)
-    pub last_frame_idx: u8,                        // f(3)
-    pub gold_frame_idx: u8,                        // f(3)
-    pub ref_frame_idx: [u8; NUM_REF_FRAMES],       // f(3)
-    pub allow_high_precision_mv: bool,             // f(1)
-    pub interpolation_filter: InterpolationFilter, // interpolation_filter()
-    pub is_motion_mode_switchable: bool,           // f(1)
-    pub use_ref_frame_mvs: bool,                   // f(1)
-    pub disable_frame_end_update_cdf: bool,        // f(1)
-    pub order_hints: [u8; NUM_REF_FRAMES],         // OrderHints
-    pub tile_info: TileInfo,                       // tile_info()
-    pub quantization_params: QuantizationParams,   // quantization_params()
-    pub segmentation_params: SegmentationParams,   // segmentation_params()
-    pub delta_q_params: DeltaQParams,              // delta_q_params()
-    pub delta_lf_params: DeltaLfParams,            // delta_lf_params()
-    pub coded_lossless: bool,                      // CodedLossless
-    pub loop_filter_params: LoopFilterParams,      // loop_filter_params()
-    pub cdef_params: CdefParams,                   // cdef_params()
-    pub allow_warped_motion: bool,                 // f(1)
-    pub reduced_tx_set: bool,                      // f(1)
+    pub show_existing_frame: bool,               // f(1)
+    pub frame_to_show_map_idx: u8,               // f(3)
+    pub display_frame_id: u16,                   // f(idLen)
+    pub frame_type: u8,                          // f(2)
+    pub show_frame: bool,                        // f(1)
+    pub showable_frame: bool,                    // f(1)
+    pub error_resilient_mode: bool,              // f(1)
+    pub disable_cdf_update: bool,                // f(1)
+    pub allow_screen_content_tools: bool,        // f(1)
+    pub force_integer_mv: bool,                  // f(1)
+    pub current_frame_id: u16,                   // f(idLen)
+    pub frame_size_override_flag: bool,          // f(1)
+    pub order_hint: u8,                          // f(OrderHintBits)
+    pub primary_ref_frame: u8,                   // f(3)
+    pub refresh_frame_flags: u8,                 // f(8)
+    pub ref_order_hint: [u8; NUM_REF_FRAMES],    // f(OrderHintBits)
+    pub frame_size: FrameSize,                   // frame_size()
+    pub render_size: RenderSize,                 // render_size()
+    pub allow_intrabc: bool,                     // f(1)
+    pub last_frame_idx: u8,                      // f(3)
+    pub gold_frame_idx: u8,                      // f(3)
+    pub ref_frame_idx: [u8; NUM_REF_FRAMES],     // f(3)
+    pub allow_high_precision_mv: bool,           // f(1)
+    pub interpolation_filter: u8,                // f(2)
+    pub is_motion_mode_switchable: bool,         // f(1)
+    pub use_ref_frame_mvs: bool,                 // f(1)
+    pub disable_frame_end_update_cdf: bool,      // f(1)
+    pub order_hints: [u8; NUM_REF_FRAMES],       // OrderHints
+    pub tile_info: TileInfo,                     // tile_info()
+    pub quantization_params: QuantizationParams, // quantization_params()
+    pub segmentation_params: SegmentationParams, // segmentation_params()
+    pub delta_q_params: DeltaQParams,            // delta_q_params()
+    pub delta_lf_params: DeltaLfParams,          // delta_lf_params()
+    pub coded_lossless: bool,                    // CodedLossless
+    pub all_lossless: bool,                      // AllLossless
+    pub loop_filter_params: LoopFilterParams,    // loop_filter_params()
+    pub cdef_params: CdefParams,                 // cdef_params()
+    pub lr_params: LrParams,                     // lr_params()
+    pub tx_mode: u8,                             // TxMode
+    pub reference_select: bool,                  // f(1)
+    pub allow_warped_motion: bool,               // f(1)
+    pub reduced_tx_set: bool,                    // f(1)
 }
 
 /// return (MiCols, MiRows)
@@ -493,8 +508,8 @@ fn parse_frame_size<R: io::Read>(
 fn parse_render_size<R: io::Read>(br: &mut BitReader<R>, fs: &FrameSize) -> Option<RenderSize> {
     let mut rs = RenderSize::default();
 
-    rs.render_and_frame_size_different = br.f::<bool>(1)?; // f(1)
-    if rs.render_and_frame_size_different {
+    let render_and_frame_size_different = br.f::<bool>(1)?; // f(1)
+    if render_and_frame_size_different {
         rs.render_width = br.f::<u32>(16)? + 1; // f(16)
         rs.render_height = br.f::<u32>(16)? + 1; // f(16)
     } else {
@@ -505,20 +520,17 @@ fn parse_render_size<R: io::Read>(br: &mut BitReader<R>, fs: &FrameSize) -> Opti
     Some(rs)
 }
 
-///
-/// parse interpolation_filter()
-///
-fn parse_interpolation_filter<R: io::Read>(br: &mut BitReader<R>) -> Option<InterpolationFilter> {
-    let mut ifp = InterpolationFilter::default();
-
-    ifp.is_filter_switchable = br.f::<bool>(1)?; // f(1)
-    if ifp.is_filter_switchable {
-        ifp.interpolation_filter = SWITCHABLE;
+/// read_interpolation_filter()
+fn read_interpolation_filter<R: io::Read>(br: &mut BitReader<R>) -> Option<u8> {
+    let is_filter_switchable = br.f::<bool>(1)?; // f(1)
+    let interpolation_filter;
+    if is_filter_switchable {
+        interpolation_filter = SWITCHABLE;
     } else {
-        ifp.interpolation_filter = br.f::<u8>(2)?; // f(2)
+        interpolation_filter = br.f::<u8>(2)?; // f(2)
     }
 
-    Some(ifp)
+    Some(interpolation_filter)
 }
 
 ///
@@ -951,6 +963,87 @@ fn parse_cdef_params<R: io::Read>(
 }
 
 ///
+/// parse lr_params()
+///
+fn parse_lr_params<R: io::Read>(
+    br: &mut BitReader<R>,
+    sh: &SequenceHeader,
+    fh: &FrameHeader,
+) -> Option<LrParams> {
+    let mut lrp = LrParams::default();
+
+    #[allow(non_upper_case_globals)]
+    const Remap_Lr_Type: [u8; 4] = [
+        RESTORE_NONE,
+        RESTORE_SWITCHABLE,
+        RESTORE_WIENER,
+        RESTORE_SGRPROJ,
+    ];
+
+    if fh.all_lossless || fh.allow_intrabc || !sh.enable_restoration {
+        lrp.frame_restoration_type[0] = RESTORE_NONE;
+        lrp.frame_restoration_type[1] = RESTORE_NONE;
+        lrp.frame_restoration_type[2] = RESTORE_NONE;
+        lrp.uses_lr = false;
+        return Some(lrp);
+    }
+    lrp.uses_lr = false;
+    let mut use_chroma_lr = false;
+    for i in 0..sh.color_config.num_planes as usize {
+        let lr_type = br.f::<usize>(2)?; // f(2)
+        lrp.frame_restoration_type[i] = Remap_Lr_Type[lr_type];
+        if lrp.frame_restoration_type[i] != RESTORE_NONE {
+            lrp.uses_lr = true;
+            if i > 0 {
+                use_chroma_lr = true;
+            }
+        }
+    }
+    if lrp.uses_lr {
+        let mut lr_unit_shift;
+        if sh.use_128x128_superblock {
+            lr_unit_shift = br.f::<u8>(1)?; // f(1)
+            lr_unit_shift += 1;
+        } else {
+            lr_unit_shift = br.f::<u8>(1)?; // f(1)
+            if lr_unit_shift != 0 {
+                let lr_unit_extra_shift = br.f::<u8>(1)?; // f(1)
+                lr_unit_shift += lr_unit_extra_shift;
+            }
+        }
+        lrp.loop_restoration_size[0] = (RESTORATION_TILESIZE_MAX >> (2 - lr_unit_shift)) as u8;
+        let lr_uv_shift;
+        if sh.color_config.subsampling_x != 0 && sh.color_config.subsampling_y != 0 && use_chroma_lr
+        {
+            lr_uv_shift = br.f::<u8>(1)?; // f(1)
+        } else {
+            lr_uv_shift = 0;
+        }
+        lrp.loop_restoration_size[1] = lrp.loop_restoration_size[0] >> lr_uv_shift;
+        lrp.loop_restoration_size[2] = lrp.loop_restoration_size[0] >> lr_uv_shift;
+    }
+
+    Some(lrp)
+}
+
+/// read_tx_mode()
+fn read_tx_mode<R: io::Read>(br: &mut BitReader<R>, fh: &FrameHeader) -> Option<u8> {
+    let tx_mode: u8;
+    if fh.coded_lossless {
+        tx_mode = ONLY_4X4;
+    } else {
+        let tx_mode_select = br.f::<bool>(1)?; // f(1)
+        if tx_mode_select {
+            tx_mode = TX_MODE_SELECT;
+        } else {
+            tx_mode = TX_MODE_LARGEST;
+        }
+    }
+
+    Some(tx_mode)
+}
+
+///
 /// parse AV1 OBU header
 ///
 pub fn parse_obu_header<R: io::Read>(bs: &mut R, sz: u32) -> io::Result<Obu> {
@@ -1310,7 +1403,7 @@ pub fn parse_frame_header<R: io::Read>(
             } else {
                 fh.allow_high_precision_mv = br.f::<bool>(1)?; // f(1)
             }
-            fh.interpolation_filter = parse_interpolation_filter(&mut br)?; // read_interpolation_filter()
+            fh.interpolation_filter = read_interpolation_filter(&mut br)?; // read_interpolation_filter()
             fh.is_motion_mode_switchable = br.f::<bool>(1)?; // f(1)
             if fh.error_resilient_mode || !sh.enable_ref_frame_mvs {
                 fh.use_ref_frame_mvs = false;
@@ -1361,13 +1454,20 @@ pub fn parse_frame_header<R: io::Read>(
         // CodedLossless
         // SegQMLevel[][segmentId]
     }
-    // AllLossless
+    fh.all_lossless = fh.coded_lossless
+        && (fh.frame_size.frame_width == fh.frame_size.superres_params.upscaled_width);
     fh.loop_filter_params = parse_loop_filter_params(&mut br, &sh.color_config, &fh)?; // loop_filter_params()
     fh.cdef_params = parse_cdef_params(&mut br, sh, &fh)?; // cdef_params()
-
-    // lr_params()
-    // read_tx_mode()
-    // frame_reference_mode()
+    fh.lr_params = parse_lr_params(&mut br, sh, &fh)?; // lr_params()
+    fh.tx_mode = read_tx_mode(&mut br, &fh)?; // read_tx_mode()
+    {
+        // frame_reference_mode()
+        if frame_is_intra {
+            fh.reference_select = false;
+        } else {
+            fh.reference_select = br.f::<bool>(1)?; // f(1)
+        }
+    }
     // skip_mode_params()
     if frame_is_intra || fh.error_resilient_mode || !sh.enable_warped_motion {
         fh.allow_warped_motion = false;
