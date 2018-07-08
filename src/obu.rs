@@ -202,9 +202,11 @@ pub struct SequenceHeader {
 #[derive(Debug, Default)]
 pub struct FrameSize {
     // frame_size()
-    pub frame_width: u32,                // FrameWidth
-    pub frame_height: u32,               // FrameHeight
-    pub superres_params: SuperresParams, // superres_params()
+    pub frame_width: u32,  // FrameWidth
+    pub frame_height: u32, // FrameHeight
+    // superres_params()
+    pub use_superres: bool,  // f(1)
+    pub upscaled_width: u32, // UpscaledWidth
 }
 
 /// Render size
@@ -213,14 +215,6 @@ pub struct RenderSize {
     // render_size()
     pub render_width: u32,  // RenderWidth
     pub render_height: u32, // RenderHeight
-}
-
-/// Superres params
-#[derive(Debug, Default)]
-pub struct SuperresParams {
-    // superres_params()
-    pub use_superres: bool,  // f(1)
-    pub upscaled_width: u32, // UpscaledWidth
 }
 
 /// Loop filter params
@@ -480,7 +474,7 @@ fn parse_color_config<R: io::Read>(
 }
 
 ///
-/// parse frame_size()
+/// parse frame_size() (include superres_params())
 ///
 fn parse_frame_size<R: io::Read>(
     br: &mut BitReader<R>,
@@ -489,6 +483,7 @@ fn parse_frame_size<R: io::Read>(
 ) -> Option<FrameSize> {
     let mut fs = FrameSize::default();
 
+    // frame_size()
     if fh.frame_size_override_flag {
         fs.frame_width = br.f::<u32>(sh.frame_width_bits as usize)? + 1; // f(n)
         fs.frame_height = br.f::<u32>(sh.frame_height_bits as usize)? + 1; // f(n)
@@ -496,8 +491,23 @@ fn parse_frame_size<R: io::Read>(
         fs.frame_width = sh.max_frame_width;
         fs.frame_height = sh.max_frame_height;
     }
-    fs.superres_params = parse_superres_params(br, &sh, &mut fs)?; // superres_params()
-                                                                   // compute_image_size()
+    // superres_params()
+    if sh.enable_superres {
+        fs.use_superres = br.f::<bool>(1)?; // f(1)
+    } else {
+        fs.use_superres = false;
+    }
+    let supreres_denom;
+    if fs.use_superres {
+        let coded_denom = br.f::<usize>(SUPERRS_DENOM_BITS)?; // f(SUPERRES_DENOM_BITS)
+        supreres_denom = coded_denom + SUPERRES_DENOM_MIN;
+    } else {
+        supreres_denom = SUPERRES_NUM;
+    }
+    fs.upscaled_width = fs.frame_width;
+    fs.frame_width = ((fs.upscaled_width as usize * SUPERRES_NUM + (supreres_denom / 2))
+        / supreres_denom) as u32;
+    // compute_image_size()
 
     Some(fs)
 }
@@ -513,7 +523,7 @@ fn parse_render_size<R: io::Read>(br: &mut BitReader<R>, fs: &FrameSize) -> Opti
         rs.render_width = br.f::<u32>(16)? + 1; // f(16)
         rs.render_height = br.f::<u32>(16)? + 1; // f(16)
     } else {
-        rs.render_width = fs.superres_params.upscaled_width;
+        rs.render_width = fs.upscaled_width;
         rs.render_height = fs.frame_height;
     }
 
@@ -588,35 +598,6 @@ fn parse_loop_filter_params<R: io::Read>(
     }
 
     Some(lfp)
-}
-
-///
-/// parse superres_params()
-///
-fn parse_superres_params<R: io::Read>(
-    br: &mut BitReader<R>,
-    sh: &SequenceHeader,
-    fs: &mut FrameSize,
-) -> Option<SuperresParams> {
-    let mut sp = SuperresParams::default();
-
-    if sh.enable_superres {
-        sp.use_superres = br.f::<bool>(1)?; // f(1)
-    } else {
-        sp.use_superres = false;
-    }
-    let supreres_denom;
-    if sp.use_superres {
-        let coded_denom = br.f::<usize>(SUPERRS_DENOM_BITS)?; // f(SUPERRES_DENOM_BITS)
-        supreres_denom = coded_denom + SUPERRES_DENOM_MIN;
-    } else {
-        supreres_denom = SUPERRES_NUM;
-    }
-    sp.upscaled_width = fs.frame_width;
-    fs.frame_width = ((sp.upscaled_width as usize * SUPERRES_NUM + (supreres_denom / 2))
-        / supreres_denom) as u32;
-
-    Some(sp)
 }
 
 ///
@@ -1342,7 +1323,7 @@ pub fn parse_frame_header<R: io::Read>(
         fh.frame_size = parse_frame_size(&mut br, sh, &fh)?; // frame_size()
         fh.render_size = parse_render_size(&mut br, &fh.frame_size)?; // render_size()
         if fh.allow_screen_content_tools
-            && fh.frame_size.superres_params.upscaled_width == fh.frame_size.frame_width
+            && fh.frame_size.upscaled_width == fh.frame_size.frame_width
         {
             fh.allow_intrabc = br.f::<bool>(1)?; // f(1)
         }
@@ -1351,7 +1332,7 @@ pub fn parse_frame_header<R: io::Read>(
             fh.frame_size = parse_frame_size(&mut br, sh, &fh)?; // frame_size()
             fh.render_size = parse_render_size(&mut br, &fh.frame_size)?; // render_size()
             if fh.allow_screen_content_tools
-                && fh.frame_size.superres_params.upscaled_width == fh.frame_size.frame_width
+                && fh.frame_size.upscaled_width == fh.frame_size.frame_width
             {
                 fh.allow_intrabc = br.f::<bool>(1)?; // f(1)
             }
@@ -1454,8 +1435,8 @@ pub fn parse_frame_header<R: io::Read>(
         // CodedLossless
         // SegQMLevel[][segmentId]
     }
-    fh.all_lossless = fh.coded_lossless
-        && (fh.frame_size.frame_width == fh.frame_size.superres_params.upscaled_width);
+    fh.all_lossless =
+        fh.coded_lossless && (fh.frame_size.frame_width == fh.frame_size.upscaled_width);
     fh.loop_filter_params = parse_loop_filter_params(&mut br, &sh.color_config, &fh)?; // loop_filter_params()
     fh.cdef_params = parse_cdef_params(&mut br, sh, &fh)?; // cdef_params()
     fh.lr_params = parse_lr_params(&mut br, sh, &fh)?; // lr_params()
