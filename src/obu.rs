@@ -39,6 +39,13 @@ const SUPERRES_NUM: usize = 8; // Numerator for upscaling ratio
 const SUPERRES_DENOM_MIN: usize = 9; // Smallest denominator for upscaling ratio
 const SUPERRS_DENOM_BITS: usize = 3; // Number of bits sent to specify denominator of upscaling ratio
 const MAX_LOOP_FILTER: i32 = 63; // Maximum value used for loop filtering
+const WARPEDMODEL_PREC_BITS: usize = 16; // Internal precision of warped motion models
+const GM_ABS_TRANS_BITS: usize = 12; // Number of bits encoded for translational components of global motion models, if part of a ROTZOOM or AFFINE model
+const GM_ABS_TRANS_ONLY_BITS: usize = 9; // Number of bits encoded for translational components of global motion models, if part of a TRANSLATION model
+const GM_ABS_ALPHA_BITS: usize = 12; // Number of bits encoded for non-translational components of global motion models
+const GM_ALPHA_PREC_BITS: usize = 15; // Number of fractional bits for sending non-translational warp model coefacients
+const GM_TRANS_PREC_BITS: usize = 6; // Number of fractional bits for sending translational warp model coefacients
+const GM_TRANS_ONLY_PREC_BITS: usize = 3; // Number of fractional bits used for pure translational warps
 
 // Color primaries
 const CP_BT_709: u8 = 1; // BT.709
@@ -74,6 +81,11 @@ const RESTORE_SGRPROJ: u8 = 2;
 const ONLY_4X4: u8 = 0;
 const TX_MODE_LARGEST: u8 = 1;
 const TX_MODE_SELECT: u8 = 2;
+
+const IDENTITY: u8 = 0; // Warp model is just an identity transform
+const TRANSLATION: u8 = 1; // Warp model is a pure translation
+const ROTZOOM: u8 = 2; // Warp model is a rotation + symmetric zoom + translation
+const AFFINE: u8 = 3; // Warp model is a general afane transform
 
 ///
 /// OBU(Open Bitstream Unit)
@@ -169,7 +181,7 @@ pub struct SequenceHeader {
     pub timing_info: TimingInfo,                  // timing_info()
     pub decoder_model_info_present_flag: bool,    // f(1)
     pub initial_display_delay_present_flag: bool, // f(1)
-    pub operating_points_cnt_minus_1: u8,         // f(5)
+    pub operating_points_cnt: u8,                 // f(5)
     pub op: [OperatingPoint; 1],                  // OperatingPoint
     pub frame_width_bits: u8,                     // f(4)
     pub frame_height_bits: u8,                    // f(4)
@@ -304,54 +316,73 @@ pub struct LrParams {
     pub loop_restoration_size: [u8; 3],  // LoopRestorationSize[]
 }
 
+/// Skip mode params
+#[derive(Debug, Default)]
+pub struct SkipModeParams {
+    pub skip_mode_frame: [u8; 2], // SkipModeFrame[]
+    // skip_mode_params()
+    pub skip_mode_present: bool, // f(1)
+}
+
+/// Global motion params
+#[derive(Debug, Default)]
+pub struct GlobalMotionParams {
+    pub gm_type: [u8; NUM_REF_FRAMES],              // GmType[]
+    pub gm_params: [[i32; 6]; NUM_REF_FRAMES],      // gm_params[]
+    pub prev_gm_params: [[i32; 6]; NUM_REF_FRAMES], // PrevGmParams[][]
+}
+
 ///
 /// Frame header OBU
 ///
 #[derive(Debug, Default)]
 pub struct FrameHeader {
     // uncompressed_header()
-    pub show_existing_frame: bool,               // f(1)
-    pub frame_to_show_map_idx: u8,               // f(3)
-    pub display_frame_id: u16,                   // f(idLen)
-    pub frame_type: u8,                          // f(2)
-    pub show_frame: bool,                        // f(1)
-    pub showable_frame: bool,                    // f(1)
-    pub error_resilient_mode: bool,              // f(1)
-    pub disable_cdf_update: bool,                // f(1)
-    pub allow_screen_content_tools: bool,        // f(1)
-    pub force_integer_mv: bool,                  // f(1)
-    pub current_frame_id: u16,                   // f(idLen)
-    pub frame_size_override_flag: bool,          // f(1)
-    pub order_hint: u8,                          // f(OrderHintBits)
-    pub primary_ref_frame: u8,                   // f(3)
-    pub refresh_frame_flags: u8,                 // f(8)
-    pub ref_order_hint: [u8; NUM_REF_FRAMES],    // f(OrderHintBits)
-    pub frame_size: FrameSize,                   // frame_size()
-    pub render_size: RenderSize,                 // render_size()
-    pub allow_intrabc: bool,                     // f(1)
-    pub last_frame_idx: u8,                      // f(3)
-    pub gold_frame_idx: u8,                      // f(3)
-    pub ref_frame_idx: [u8; NUM_REF_FRAMES],     // f(3)
-    pub allow_high_precision_mv: bool,           // f(1)
-    pub interpolation_filter: u8,                // f(2)
-    pub is_motion_mode_switchable: bool,         // f(1)
-    pub use_ref_frame_mvs: bool,                 // f(1)
-    pub disable_frame_end_update_cdf: bool,      // f(1)
-    pub order_hints: [u8; NUM_REF_FRAMES],       // OrderHints
-    pub tile_info: TileInfo,                     // tile_info()
-    pub quantization_params: QuantizationParams, // quantization_params()
-    pub segmentation_params: SegmentationParams, // segmentation_params()
-    pub delta_q_params: DeltaQParams,            // delta_q_params()
-    pub delta_lf_params: DeltaLfParams,          // delta_lf_params()
-    pub coded_lossless: bool,                    // CodedLossless
-    pub all_lossless: bool,                      // AllLossless
-    pub loop_filter_params: LoopFilterParams,    // loop_filter_params()
-    pub cdef_params: CdefParams,                 // cdef_params()
-    pub lr_params: LrParams,                     // lr_params()
-    pub tx_mode: u8,                             // TxMode
-    pub reference_select: bool,                  // f(1)
-    pub allow_warped_motion: bool,               // f(1)
-    pub reduced_tx_set: bool,                    // f(1)
+    pub show_existing_frame: bool,                // f(1)
+    pub frame_to_show_map_idx: u8,                // f(3)
+    pub display_frame_id: u16,                    // f(idLen)
+    pub frame_type: u8,                           // f(2)
+    pub frame_is_intra: bool,                     // FrameIsIntra
+    pub show_frame: bool,                         // f(1)
+    pub showable_frame: bool,                     // f(1)
+    pub error_resilient_mode: bool,               // f(1)
+    pub disable_cdf_update: bool,                 // f(1)
+    pub allow_screen_content_tools: bool,         // f(1)
+    pub force_integer_mv: bool,                   // f(1)
+    pub current_frame_id: u16,                    // f(idLen)
+    pub frame_size_override_flag: bool,           // f(1)
+    pub order_hint: u8,                           // f(OrderHintBits)
+    pub primary_ref_frame: u8,                    // f(3)
+    pub refresh_frame_flags: u8,                  // f(8)
+    pub ref_order_hint: [u8; NUM_REF_FRAMES],     // f(OrderHintBits)
+    pub frame_size: FrameSize,                    // frame_size()
+    pub render_size: RenderSize,                  // render_size()
+    pub allow_intrabc: bool,                      // f(1)
+    pub last_frame_idx: u8,                       // f(3)
+    pub gold_frame_idx: u8,                       // f(3)
+    pub ref_frame_idx: [u8; NUM_REF_FRAMES],      // f(3)
+    pub allow_high_precision_mv: bool,            // f(1)
+    pub interpolation_filter: u8,                 // f(2)
+    pub is_motion_mode_switchable: bool,          // f(1)
+    pub use_ref_frame_mvs: bool,                  // f(1)
+    pub disable_frame_end_update_cdf: bool,       // f(1)
+    pub order_hints: [u8; NUM_REF_FRAMES],        // OrderHints
+    pub tile_info: TileInfo,                      // tile_info()
+    pub quantization_params: QuantizationParams,  // quantization_params()
+    pub segmentation_params: SegmentationParams,  // segmentation_params()
+    pub delta_q_params: DeltaQParams,             // delta_q_params()
+    pub delta_lf_params: DeltaLfParams,           // delta_lf_params()
+    pub coded_lossless: bool,                     // CodedLossless
+    pub all_lossless: bool,                       // AllLossless
+    pub loop_filter_params: LoopFilterParams,     // loop_filter_params()
+    pub cdef_params: CdefParams,                  // cdef_params()
+    pub lr_params: LrParams,                      // lr_params()
+    pub tx_mode: u8,                              // TxMode
+    pub skip_mode_params: SkipModeParams,         // skip_mode_params()
+    pub global_motion_params: GlobalMotionParams, // global_motion_params()
+    pub reference_select: bool,                   // f(1)
+    pub allow_warped_motion: bool,                // f(1)
+    pub reduced_tx_set: bool,                     // f(1)
 }
 
 /// return (MiCols, MiRows)
@@ -471,6 +502,23 @@ fn parse_color_config<R: io::Read>(
     cc.separate_uv_delta_q = br.f::<bool>(1)?; // f(1)
 
     Some(cc)
+}
+
+///
+/// parse timing_info()
+///
+fn parse_timing_info<R: io::Read>(br: &mut BitReader<R>) -> Option<TimingInfo> {
+    let mut ti = TimingInfo::default();
+
+    ti.num_units_in_display_tick = br.f::<u32>(32)?; // f(32)
+    ti.time_scale = br.f::<u32>(32)?; // f(32)
+    ti.equal_picture_interval = br.f::<bool>(1)?; // f(1)
+    if ti.equal_picture_interval {
+        ti.num_ticks_per_picture = 0 + 1; // uvlc()
+        unimplemented!("uvlc() for num_ticks_per_picture_minus_1");
+    }
+
+    Some(ti)
 }
 
 ///
@@ -1025,6 +1073,286 @@ fn read_tx_mode<R: io::Read>(br: &mut BitReader<R>, fh: &FrameHeader) -> Option<
 }
 
 ///
+/// parse skip_mode_params()
+///
+fn parse_skip_mode_params<R: io::Read>(
+    br: &mut BitReader<R>,
+    sh: &SequenceHeader,
+    fh: &FrameHeader,
+    rfman: &av1::RefFrameManager,
+) -> Option<SkipModeParams> {
+    let mut smp = SkipModeParams::default();
+
+    let skip_mode_allowed;
+    if fh.frame_is_intra || !fh.reference_select || !sh.enable_order_hint {
+        skip_mode_allowed = false;
+    } else {
+        let mut forward_idx = -1;
+        let mut backward_idx = -1;
+        let (mut forward_hint, mut backward_hint) = (0, 0);
+        for i in 0..REFS_PER_FRAME {
+            let ref_hint = rfman.ref_order_hint[fh.ref_frame_idx[i] as usize] as i32;
+            if av1::get_relative_dist(ref_hint, fh.order_hint as i32, sh) < 0 {
+                if forward_idx < 0 || av1::get_relative_dist(ref_hint, forward_hint, sh) > 0 {
+                    forward_idx = i as i32;
+                    forward_hint = ref_hint;
+                }
+            } else if av1::get_relative_dist(ref_hint, fh.order_hint as i32, sh) > 0 {
+                if backward_idx < 0 || av1::get_relative_dist(ref_hint, backward_hint, sh) < 0 {
+                    backward_idx = i as i32;
+                    backward_hint = ref_hint;
+                }
+            }
+        }
+        if forward_idx < 0 {
+            skip_mode_allowed = false;
+        } else if backward_idx >= 0 {
+            skip_mode_allowed = true;
+            smp.skip_mode_frame[0] =
+                (LAST_FRAME as i32 + cmp::min(forward_idx, backward_idx)) as u8;
+            smp.skip_mode_frame[1] =
+                (LAST_FRAME as i32 + cmp::max(forward_idx, backward_idx)) as u8;
+        } else {
+            let mut second_forward_id = -1;
+            let mut second_forward_hint = 0;
+            for i in 0..REFS_PER_FRAME {
+                let ref_hint = rfman.ref_order_hint[fh.ref_frame_idx[i] as usize] as i32;
+                if av1::get_relative_dist(ref_hint, forward_hint, sh) < 0 {
+                    if second_forward_id < 0
+                        || av1::get_relative_dist(ref_hint, second_forward_hint, sh) > 0
+                    {
+                        second_forward_id = i as i32;
+                        second_forward_hint = ref_hint;
+                    }
+                }
+            }
+            if second_forward_id < 0 {
+                skip_mode_allowed = false;
+            } else {
+                skip_mode_allowed = true;
+                smp.skip_mode_frame[0] =
+                    (LAST_FRAME as i32 + cmp::min(forward_idx, second_forward_id)) as u8;
+                smp.skip_mode_frame[1] =
+                    (LAST_FRAME as i32 + cmp::max(forward_idx, second_forward_id)) as u8;
+            }
+        }
+    }
+    if skip_mode_allowed {
+        smp.skip_mode_present = br.f::<bool>(1)?; // f(1)
+    } else {
+        smp.skip_mode_present = false;
+    }
+
+    Some(smp)
+}
+
+///
+/// parse global_motion_params()
+///
+fn parse_global_motion_params<R: io::Read>(
+    br: &mut BitReader<R>,
+    fh: &FrameHeader,
+) -> Option<GlobalMotionParams> {
+    let mut gmp = GlobalMotionParams::default();
+
+    for ref_ in LAST_FRAME..=ALTREF_FRAME {
+        gmp.gm_type[ref_] = IDENTITY;
+        for i in 0..6 {
+            gmp.gm_params[ref_][i] = if i % 3 == 2 {
+                1 << WARPEDMODEL_PREC_BITS
+            } else {
+                0
+            };
+        }
+    }
+    if fh.frame_is_intra {
+        return Some(gmp);
+    }
+    for ref_ in LAST_FRAME..=ALTREF_FRAME {
+        let is_global = br.f::<bool>(1)?; // f(1)
+        let type_;
+        if is_global {
+            let is_rot_zoom = br.f::<bool>(1)?; // f(1)
+            if is_rot_zoom {
+                type_ = ROTZOOM;
+            } else {
+                let is_translation = br.f::<bool>(1)?; // f(1)
+                type_ = if is_translation { TRANSLATION } else { AFFINE };
+            }
+        } else {
+            type_ = IDENTITY;
+        }
+        gmp.gm_type[ref_] = type_;
+
+        if type_ >= ROTZOOM {
+            gmp.gm_params[ref_][2] = read_global_param(br, type_, ref_, 2, fh)?;
+            gmp.gm_params[ref_][3] = read_global_param(br, type_, ref_, 3, fh)?;
+            if type_ == AFFINE {
+                gmp.gm_params[ref_][4] = read_global_param(br, type_, ref_, 4, fh)?;
+                gmp.gm_params[ref_][5] = read_global_param(br, type_, ref_, 5, fh)?;
+            } else {
+                gmp.gm_params[ref_][4] = -gmp.gm_params[ref_][3];
+                gmp.gm_params[ref_][5] = gmp.gm_params[ref_][2];
+            }
+        }
+        if type_ > TRANSLATION {
+            gmp.gm_params[ref_][0] = read_global_param(br, type_, ref_, 1, fh)?;
+            gmp.gm_params[ref_][1] = read_global_param(br, type_, ref_, 0, fh)?;
+        }
+    }
+
+    Some(gmp)
+}
+
+/// read_global_param() return gm_params[ref][idx]
+fn read_global_param<R: io::Read>(
+    br: &mut BitReader<R>,
+    type_: u8,
+    ref_: usize,
+    idx: usize,
+    fh: &FrameHeader,
+) -> Option<i32> {
+    let mut abs_bits = GM_ABS_ALPHA_BITS;
+    let mut prec_bits = GM_ALPHA_PREC_BITS;
+    if idx < 2 {
+        if type_ == TRANSLATION {
+            abs_bits = GM_ABS_TRANS_ONLY_BITS - if fh.allow_high_precision_mv { 0 } else { 1 };
+            prec_bits = GM_TRANS_ONLY_PREC_BITS - if fh.allow_high_precision_mv { 0 } else { 1 };
+        } else {
+            abs_bits = GM_ABS_TRANS_BITS;
+            prec_bits = GM_TRANS_PREC_BITS;
+        }
+    }
+    let prec_diff = WARPEDMODEL_PREC_BITS - prec_bits;
+    let round = if (idx % 3) == 2 {
+        1 << WARPEDMODEL_PREC_BITS
+    } else {
+        0
+    };
+    let sub = if (idx % 3) == 2 { 1 << prec_bits } else { 0 };
+    let mx = 1 << abs_bits;
+    let r = (fh.global_motion_params.prev_gm_params[ref_][idx] >> prec_diff) - sub;
+    let gm_params = (decode_signed_subexp_with_ref(br, -mx, mx + 1, r)? << prec_diff) + round;
+
+    Some(gm_params)
+}
+
+/// decode_signed_subexp_with_ref()
+fn decode_signed_subexp_with_ref<R: io::Read>(
+    br: &mut BitReader<R>,
+    low: i32,
+    high: i32,
+    r: i32,
+) -> Option<i32> {
+    let x = decode_unsigned_subexp_with_ref(br, high - low, r - low)?;
+    Some(x + low)
+}
+
+/// decode_unsigned_subexp_with_ref()
+fn decode_unsigned_subexp_with_ref<R: io::Read>(
+    br: &mut BitReader<R>,
+    mx: i32,
+    r: i32,
+) -> Option<i32> {
+    let v = decode_subexp(br, mx)?;
+    if (r << 1) <= mx {
+        Some(inverse_recenter(r, v))
+    } else {
+        Some(mx - 1 - inverse_recenter(mx - 1 - r, v))
+    }
+}
+
+/// decode_subexp()
+fn decode_subexp<R: io::Read>(br: &mut BitReader<R>, num_syms: i32) -> Option<i32> {
+    let mut i = 0;
+    let mut mk = 0;
+    let k = 3;
+    loop {
+        let b2 = if i != 0 { k + i - 1 } else { k };
+        let a = 1 << b2;
+        if num_syms <= mk + 3 * a {
+            let subexp_final_bits = br.ns((num_syms - mk) as u32)? as i32; // ns(numSyms-mk)
+            return Some(subexp_final_bits + mk);
+        } else {
+            let subexp_more_bits = br.f::<bool>(1)?; // f(1)
+            if subexp_more_bits {
+                i += 1;
+                mk += a;
+            } else {
+                let subexp_bits = br.ns(b2)? as i32; // ns(b2)
+                return Some(subexp_bits + mk);
+            }
+        }
+    }
+}
+
+/// inverse_recenter()
+#[inline]
+fn inverse_recenter(r: i32, v: i32) -> i32 {
+    if v > 2 * r {
+        v
+    } else if (v & 1) != 0 {
+        r - ((v + 1) >> 1)
+    } else {
+        r + (v >> 1)
+    }
+}
+
+///
+/// parse film_grain_params()
+///
+fn parse_film_grain_params<R: io::Read>(
+    br: &mut BitReader<R>,
+    sh: &SequenceHeader,
+    fh: &FrameHeader,
+) -> Option<()> {
+    if !sh.film_grain_params_present || (!fh.show_frame && fh.showable_frame) {
+        // reset_grain_params()
+        return Some(());
+    }
+    let apply_grain = br.f::<bool>(1)?; // f(1)
+    if !apply_grain {
+        // reset_grain_params()
+        return Some(());
+    }
+    unimplemented!("film_grain_params()");
+    //Some(())
+}
+
+/// setup_past_independence()
+fn setup_past_independence(fh: &mut FrameHeader) {
+    // FeatureData[i][j]
+    // PrevSegmentIds[row][col]
+    for ref_ in LAST_FRAME..=ALTREF_FRAME {
+        fh.global_motion_params.gm_type[ref_] = IDENTITY;
+        for i in 0..=5 {
+            fh.global_motion_params.prev_gm_params[ref_][i] = if i % 3 == 2 {
+                1 << WARPEDMODEL_PREC_BITS
+            } else {
+                0
+            };
+        }
+    }
+    fh.loop_filter_params.loop_filter_delta_enabled = true;
+    fh.loop_filter_params.loop_filter_ref_deltas[INTRA_FRAME] = 1;
+    fh.loop_filter_params.loop_filter_ref_deltas[LAST_FRAME] = 0;
+    fh.loop_filter_params.loop_filter_ref_deltas[LAST2_FRAME] = 0;
+    fh.loop_filter_params.loop_filter_ref_deltas[LAST3_FRAME] = 0;
+    fh.loop_filter_params.loop_filter_ref_deltas[BWDREF_FRAME] = 0;
+    fh.loop_filter_params.loop_filter_ref_deltas[GOLDEN_FRAME] = -1;
+    fh.loop_filter_params.loop_filter_ref_deltas[ALTREF_FRAME] = -1;
+    fh.loop_filter_params.loop_filter_ref_deltas[ALTREF2_FRAME] = -1;
+    fh.loop_filter_params.loop_filter_mode_deltas[0] = 0;
+    fh.loop_filter_params.loop_filter_mode_deltas[1] = 0;
+}
+
+/// load_previous()
+fn load_previous(fh: &mut FrameHeader, rfman: &av1::RefFrameManager) {
+    let prev_frame = fh.ref_frame_idx[fh.primary_ref_frame as usize] as usize;
+    fh.global_motion_params.prev_gm_params = rfman.saved_gm_params[prev_frame];
+}
+
+///
 /// parse AV1 OBU header
 ///
 pub fn parse_obu_header<R: io::Read>(bs: &mut R, sz: u32) -> io::Result<Obu> {
@@ -1088,7 +1416,7 @@ pub fn parse_sequence_header<R: io::Read>(bs: &mut R, sz: u32) -> Option<Sequenc
         sh.timing_info_present_flag = false;
         sh.decoder_model_info_present_flag = false;
         sh.initial_display_delay_present_flag = false;
-        sh.operating_points_cnt_minus_1 = 0;
+        sh.operating_points_cnt = 1;
         sh.op[0].operating_point_idc = 0;
         sh.op[0].seq_level_idx = br.f::<u8>(5)?; // f(5)
         sh.op[0].seq_tier = 0;
@@ -1098,14 +1426,18 @@ pub fn parse_sequence_header<R: io::Read>(bs: &mut R, sz: u32) -> Option<Sequenc
     } else {
         sh.timing_info_present_flag = br.f::<bool>(1)?; // f(1)
         if sh.timing_info_present_flag {
-            unimplemented!("timing_info_present_flag==1");
+            sh.timing_info = parse_timing_info(&mut br)?; // timing_info()
+            sh.decoder_model_info_present_flag = br.f::<bool>(1)?; // f(1)
+            if sh.decoder_model_info_present_flag {
+                unimplemented!("decoder_model_info()");
+            }
         } else {
             sh.decoder_model_info_present_flag = false;
         }
         sh.initial_display_delay_present_flag = br.f::<bool>(1)?; // f(1)
-        sh.operating_points_cnt_minus_1 = br.f::<u8>(5)?; // f(5)
-        assert_eq!(sh.operating_points_cnt_minus_1, 0);
-        for i in 0..=sh.operating_points_cnt_minus_1 as usize {
+        sh.operating_points_cnt = br.f::<u8>(5)? + 1; // f(5)
+        assert_eq!(sh.operating_points_cnt, 1); // FIXME: support single operating point
+        for i in 0..(sh.operating_points_cnt) as usize {
             sh.op[i].operating_point_idc = br.f::<u16>(12)?; // f(12)
             sh.op[i].seq_level_idx = br.f::<u8>(5)?; // f(5)
             if sh.op[i].seq_level_idx > 7 {
@@ -1216,11 +1548,10 @@ pub fn parse_frame_header<R: io::Read>(
     assert!(id_len <= 16);
     assert!(NUM_REF_FRAMES <= 8);
     let all_frames = ((1usize << NUM_REF_FRAMES) - 1) as u8; // 0xff
-    let frame_is_intra: bool;
     if sh.reduced_still_picture_header {
         fh.show_existing_frame = false;
         fh.frame_type = KEY_FRAME;
-        frame_is_intra = true;
+        fh.frame_is_intra = true;
         fh.show_frame = true;
         fh.showable_frame = false;
     } else {
@@ -1244,7 +1575,7 @@ pub fn parse_frame_header<R: io::Read>(
             return Some(fh);
         }
         fh.frame_type = br.f::<u8>(2)?; // f(2)
-        frame_is_intra = fh.frame_type == INTRA_ONLY_FRAME || fh.frame_type == KEY_FRAME;
+        fh.frame_is_intra = fh.frame_type == INTRA_ONLY_FRAME || fh.frame_type == KEY_FRAME;
         fh.show_frame = br.f::<bool>(1)?; // f(1)
         if fh.show_frame
             && sh.decoder_model_info_present_flag
@@ -1287,7 +1618,7 @@ pub fn parse_frame_header<R: io::Read>(
     } else {
         fh.force_integer_mv = false;
     }
-    if frame_is_intra {
+    if fh.frame_is_intra {
         fh.force_integer_mv = true;
     }
     if sh.frame_id_numbers_present_flag {
@@ -1305,7 +1636,7 @@ pub fn parse_frame_header<R: io::Read>(
         fh.frame_size_override_flag = br.f::<bool>(1)?; // f(1)
     }
     fh.order_hint = br.f::<u8>(sh.order_hint_bits as usize)?; // f(OrderHintBits)
-    if frame_is_intra || fh.error_resilient_mode {
+    if fh.frame_is_intra || fh.error_resilient_mode {
         fh.primary_ref_frame = PRIMARY_REF_NONE;
     } else {
         fh.primary_ref_frame = br.f::<u8>(3)?; // f(3)
@@ -1321,7 +1652,7 @@ pub fn parse_frame_header<R: io::Read>(
     } else {
         fh.refresh_frame_flags = br.f::<u8>(8)?; // f(8)
     }
-    if !frame_is_intra || fh.refresh_frame_flags != all_frames {
+    if !fh.frame_is_intra || fh.refresh_frame_flags != all_frames {
         if fh.error_resilient_mode && sh.enable_order_hint {
             for i in 0..NUM_REF_FRAMES {
                 fh.ref_order_hint[i] = br.f::<u8>(sh.order_hint_bits as usize)?; // f(OrderHintBits)
@@ -1405,7 +1736,7 @@ pub fn parse_frame_header<R: io::Read>(
             }
         }
     }
-    if !frame_is_intra {
+    if !fh.frame_is_intra {
         for i in 0..REFS_PER_FRAME {
             let ref_frame = LAST_FRAME + i;
             let hint = rfman.ref_order_hint[fh.ref_frame_idx[i] as usize];
@@ -1424,10 +1755,10 @@ pub fn parse_frame_header<R: io::Read>(
     }
     if fh.primary_ref_frame == PRIMARY_REF_NONE {
         // init_non_coeff_cdfs()
-        // setup_past_independence()
+        setup_past_independence(&mut fh);
     } else {
-        // load_cdfs()
-        // load_previous()
+        // load_cdfs(ref_frame_idx[primary_ref_frame])
+        load_previous(&mut fh, rfman);
     }
     if fh.use_ref_frame_mvs {
         // motion_field_estimation()
@@ -1455,22 +1786,21 @@ pub fn parse_frame_header<R: io::Read>(
     fh.tx_mode = read_tx_mode(&mut br, &fh)?; // read_tx_mode()
     {
         // frame_reference_mode()
-        if frame_is_intra {
+        if fh.frame_is_intra {
             fh.reference_select = false;
         } else {
             fh.reference_select = br.f::<bool>(1)?; // f(1)
         }
     }
-    // skip_mode_params()
-    if frame_is_intra || fh.error_resilient_mode || !sh.enable_warped_motion {
+    fh.skip_mode_params = parse_skip_mode_params(&mut br, sh, &fh, rfman)?; // skip_mode_params()
+    if fh.frame_is_intra || fh.error_resilient_mode || !sh.enable_warped_motion {
         fh.allow_warped_motion = false;
     } else {
         fh.allow_warped_motion = br.f::<bool>(1)?; // f(1)
     }
     fh.reduced_tx_set = br.f::<bool>(1)?; // f(1)
-
-    // global_motion_params()
-    // film_grain_params()
+    fh.global_motion_params = parse_global_motion_params(&mut br, &fh)?; // global_motion_params()
+    parse_film_grain_params(&mut br, sh, &fh)?; // film_grain_params()
 
     Some(fh)
 }

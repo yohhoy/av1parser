@@ -23,6 +23,8 @@ pub struct RefFrameManager {
     pub ref_frame_id: [u16; NUM_REF_FRAMES],  // RefFrameId[i]
     pub ref_frame_type: [u8; NUM_REF_FRAMES], // RefFrameType[i]
     pub ref_order_hint: [u8; NUM_REF_FRAMES], // RefOrderHint[i]
+
+    pub saved_gm_params: [[[i32; 6]; NUM_REF_FRAMES]; NUM_REF_FRAMES], // SavedGmParams[i][ref][j]
 }
 
 impl RefFrameManager {
@@ -32,6 +34,7 @@ impl RefFrameManager {
             ref_frame_id: [0; NUM_REF_FRAMES],
             ref_frame_type: [0; NUM_REF_FRAMES],
             ref_order_hint: [0; NUM_REF_FRAMES],
+            saved_gm_params: [[[0; 6]; NUM_REF_FRAMES]; NUM_REF_FRAMES],
         }
     }
 
@@ -69,7 +72,24 @@ impl RefFrameManager {
                 self.ref_frame_id[i] = fh.current_frame_id;
                 self.ref_frame_type[i] = fh.frame_type;
                 self.ref_order_hint[i] = fh.order_hint;
+                for ref_ in LAST_FRAME..=ALTREF_FRAME {
+                    for j in 0..=5 {
+                        self.saved_gm_params[i][ref_][j] =
+                            fh.global_motion_params.gm_params[ref_][j];
+                    }
+                }
             }
         }
     }
+}
+
+/// Get relative distance function
+pub fn get_relative_dist(a: i32, b: i32, sh: &obu::SequenceHeader) -> i32 {
+    if !sh.enable_order_hint {
+        return 0;
+    }
+    let mut diff = a - b;
+    let m = 1 << (sh.order_hint_bits - 1);
+    diff = (diff & (m - 1)) - (diff & m);
+    return diff;
 }
