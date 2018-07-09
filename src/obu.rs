@@ -1032,7 +1032,12 @@ pub fn parse_obu_header<R: io::Read>(bs: &mut R, sz: u32) -> io::Result<Obu> {
     let mut b1 = [0; 1];
     bs.read_exact(&mut b1)?;
     let obu_forbidden_bit = (b1[0] >> 7) & 1; // f(1)
-    assert_eq!(obu_forbidden_bit, 0);
+    if obu_forbidden_bit != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "obu_forbidden_bit!=0",
+        ));
+    }
     let obu_type = (b1[0] >> 3) & 0b1111; // f(4)
     let obu_extension_flag = (b1[0] >> 2) & 1; // f(1)
     let obu_has_size_field = (b1[0] >> 1) & 1; // f(1)
@@ -1045,10 +1050,17 @@ pub fn parse_obu_header<R: io::Read>(bs: &mut R, sz: u32) -> io::Result<Obu> {
         (0, 0)
     };
     // parse 'obu_size' in open_bitstream_unit()
+    let obu_header_len = 1 + (obu_extension_flag as u32);
     let (obu_size_len, obu_size) = if obu_has_size_field == 1 {
         leb128(bs)?
     } else {
-        (0, sz - 1 - (obu_extension_flag as u32))
+        if sz < obu_header_len {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid sz in open_bitstream_unit()",
+            ));
+        }
+        (0, sz - obu_header_len)
     };
 
     return Ok(Obu {
@@ -1058,7 +1070,7 @@ pub fn parse_obu_header<R: io::Read>(bs: &mut R, sz: u32) -> io::Result<Obu> {
         temporal_id: temporal_id,
         spatial_id: spatial_id,
         obu_size: obu_size,
-        header_len: 1 + (obu_extension_flag as u32) + obu_size_len,
+        header_len: obu_header_len + obu_size_len,
     });
 }
 

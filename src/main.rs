@@ -3,8 +3,8 @@ extern crate hex;
 
 use std::env;
 use std::fs;
-use std::io::{BufReader, Read};
-use std::io::{Seek, SeekFrom};
+use std::io;
+use std::io::SeekFrom;
 
 mod av1;
 mod bitio;
@@ -16,7 +16,7 @@ const FCC_AV01: [u8; 4] = *b"AV01"; // AV1 codec
 ///
 /// parse IVF file
 ///
-fn parse_ivf_file<R: Read + Seek>(mut reader: R, fname: &str) -> std::io::Result<()> {
+fn parse_ivf_file<R: io::Read + io::Seek>(mut reader: R, fname: &str) -> io::Result<()> {
     // parse IVF header
     let mut ivf_header = [0; ivf::IVF_HEADER_SIZE];
     reader.read_exact(&mut ivf_header)?;
@@ -55,6 +55,12 @@ fn parse_ivf_file<R: Read + Seek>(mut reader: R, fname: &str) -> std::io::Result
         while sz > 0 {
             let obu = obu::parse_obu_header(&mut reader, sz)?;
             println!("  {}", obu);
+            if sz < obu.header_len + obu.obu_size {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "invalid OBU size",
+                ));
+            }
             sz -= obu.header_len + obu.obu_size;
             let pos = reader.seek(SeekFrom::Current(0))?;
             match obu.obu_type {
@@ -99,7 +105,7 @@ fn main() -> std::io::Result<()> {
         // open IVF file as read-only mode
         let f = fs::OpenOptions::new().read(true).open(fname)?;
 
-        let mut reader = BufReader::new(f);
+        let mut reader = io::BufReader::new(f);
         parse_ivf_file(reader, fname)?;
     }
     Ok(())
