@@ -15,6 +15,24 @@ pub const ALTREF2_FRAME: usize = 6;
 pub const ALTREF_FRAME: usize = 7;
 
 ///
+/// Sequence
+///
+#[derive(Debug)]
+pub struct Sequence {
+    pub sh: Option<obu::SequenceHeader>,
+    pub rfman: RefFrameManager,
+}
+
+impl Sequence {
+    pub fn new() -> Self {
+        Sequence {
+            sh: None,
+            rfman: RefFrameManager::new(),
+        }
+    }
+}
+
+///
 /// Referenfe frame manager
 ///
 #[derive(Debug)]

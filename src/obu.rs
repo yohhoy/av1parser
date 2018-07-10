@@ -1391,6 +1391,13 @@ pub fn parse_obu_header<R: io::Read>(bs: &mut R, sz: u32) -> io::Result<Obu> {
         (0, sz - obu_header_len)
     };
 
+    if sz < obu_header_len + obu_size_len + obu_size {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid OBU size",
+        ));
+    }
+
     return Ok(Obu {
         obu_type: obu_type,
         obu_extension_flag: obu_extension_flag == 1,
