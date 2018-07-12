@@ -1,7 +1,9 @@
 extern crate byteorder;
+#[macro_use]
+extern crate clap;
 extern crate hex;
 
-use std::env;
+use clap::{App, Arg};
 use std::fs;
 use std::io;
 use std::io::{Seek, SeekFrom};
@@ -130,14 +132,17 @@ fn parse_obu_bitstream<R: io::Read + io::Seek>(mut reader: R, fname: &str) -> io
 }
 
 fn main() -> std::io::Result<()> {
-    let args: Vec<String> = env::args().collect();
+    let app = App::new(crate_name!())
+        .version(crate_version!())
+        .about(crate_description!())
+        .arg(Arg::from_usage("<INPUT>... 'Input AV1 bitstream files'").index(1))
+        .arg(Arg::from_usage("[v] -v --verbose 'Show verbose log'"));
 
-    if args.len() < 2 {
-        println!("usage: {} <input.ivf|obu>...", args[0]);
-        return Ok(());
-    }
+    // get commandline flags
+    let mathces = app.get_matches();
+    let _verbose = mathces.occurrences_of("v") > 0;
 
-    for fname in &args[1..] {
+    for fname in mathces.values_of("INPUT").unwrap() {
         // open input file as read-only mode
         let f = fs::OpenOptions::new().read(true).open(fname)?;
         let mut reader = io::BufReader::new(f);
@@ -150,7 +155,7 @@ fn main() -> std::io::Result<()> {
             FileFormat::IVF => parse_ivf_format(reader, fname)?,
             FileFormat::WebM => println!("{}: (WebM format unsupported)", fname),
             FileFormat::Bitstream => parse_obu_bitstream(reader, fname)?,
-        }
+        };
     }
     Ok(())
 }

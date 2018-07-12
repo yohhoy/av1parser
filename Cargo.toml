@@ -2,7 +2,9 @@
 name = "av1parser"
 version = "0.1.0"
 authors = ["yoh <kawasaki.liamg@gmail.com>"]
+description = "AV1 Bitstream Parser"
 
 [dependencies]
-byteorder = "1"
+byteorder = "1.2"
+clap = "2.32"
 hex = "0.3"
