@@ -1,3 +1,5 @@
 ./aomenc --cpu-used=2 --obu park_joy_90p_8_420.y4m -o parkjoy.obu
 ./aomenc --cpu-used=2 --ivf park_joy_90p_8_420.y4m -o parkjoy.ivf
 ./aomenc --cpu-used=2 --webm park_joy_90p_8_420.y4m -o parkjoy.webm
+
+./aomenc --cpu-used=2 --error-resilient=1 park_joy_90p_8_420.y4m -o parkjoy_error-resilient.ivf
