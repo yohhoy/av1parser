@@ -63,10 +63,10 @@ const MC_UNSPECIFIED: u8 = 2; // Unspecified
 const CSP_UNKNOWN: u8 = 0; // Unknown (in this case the source video transfer function must be signaled outside the AV1 bitstream)
 
 // Frame type
-const KEY_FRAME: u8 = 0;
-//const INTER_FRAME: u8 = 1;
-const INTRA_ONLY_FRAME: u8 = 2;
-const SWITCH_FRAME: u8 = 3;
+pub const KEY_FRAME: u8 = 0;
+pub const INTER_FRAME: u8 = 1;
+pub const INTRA_ONLY_FRAME: u8 = 2;
+pub const SWITCH_FRAME: u8 = 3;
 
 // interpolation_filter
 const SWITCHABLE: u8 = 4;

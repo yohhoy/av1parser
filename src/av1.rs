@@ -41,8 +41,10 @@ pub struct RefFrameManager {
     pub ref_frame_id: [u16; NUM_REF_FRAMES],  // RefFrameId[i]
     pub ref_frame_type: [u8; NUM_REF_FRAMES], // RefFrameType[i]
     pub ref_order_hint: [u8; NUM_REF_FRAMES], // RefOrderHint[i]
-
     pub saved_gm_params: [[[i32; 6]; NUM_REF_FRAMES]; NUM_REF_FRAMES], // SavedGmParams[i][ref][j]
+    // user data
+    pub frame_counter: i64,
+    pub frame_dts: [i64; NUM_REF_FRAMES],
 }
 
 impl RefFrameManager {
@@ -53,6 +55,8 @@ impl RefFrameManager {
             ref_frame_type: [0; NUM_REF_FRAMES],
             ref_order_hint: [0; NUM_REF_FRAMES],
             saved_gm_params: [[[0; 6]; NUM_REF_FRAMES]; NUM_REF_FRAMES],
+            frame_counter: 0,
+            frame_dts: [i64::min_value(); NUM_REF_FRAMES],
         }
     }
 
@@ -96,8 +100,11 @@ impl RefFrameManager {
                             fh.global_motion_params.gm_params[ref_][j];
                     }
                 }
+                // user data
+                self.frame_dts[i] = self.frame_counter;
             }
         }
+        self.frame_counter += 1;
     }
 }
 
@@ -110,4 +117,42 @@ pub fn get_relative_dist(a: i32, b: i32, sh: &obu::SequenceHeader) -> i32 {
     let m = 1 << (sh.order_hint_bits - 1);
     diff = (diff & (m - 1)) - (diff & m);
     return diff;
+}
+
+pub mod stringify {
+    use super::obu;
+    use std::borrow::Cow;
+
+    pub fn frame_type(v: u8) -> &'static str {
+        match v {
+            obu::KEY_FRAME => "KeyFrame",
+            obu::INTER_FRAME => "InterFrame",
+            obu::INTRA_ONLY_FRAME => "IntraOnlyFrame",
+            obu::SWITCH_FRAME => "SwitchFrame",
+            _ => "(undefined)",
+        }
+    }
+
+    pub fn ref_frame(bitmask: u8) -> Cow<'static, str> {
+        const INTRA_FRAME: u8 = 1 << super::INTRA_FRAME;
+        const LAST_FRAME: u8 = 1 << super::LAST_FRAME;
+        const LAST2_FRAME: u8 = 1 << super::LAST2_FRAME;
+        const LAST3_FRAME: u8 = 1 << super::LAST3_FRAME;
+        const GOLDEN_FRAME: u8 = 1 << super::GOLDEN_FRAME;
+        const BWDREF_FRAME: u8 = 1 << super::BWDREF_FRAME;
+        const ALTREF2_FRAME: u8 = 1 << super::ALTREF2_FRAME;
+        const ALTREF_FRAME: u8 = 1 << super::ALTREF_FRAME;
+        match bitmask {
+            255 => "all".into(),
+            INTRA_FRAME => "INTRA".into(),
+            LAST_FRAME => "LAST".into(),
+            LAST2_FRAME => "LAST2".into(),
+            LAST3_FRAME => "LAST3".into(),
+            GOLDEN_FRAME => "GOLDEN".into(),
+            BWDREF_FRAME => "BWDREF".into(),
+            ALTREF2_FRAME => "ALTREF".into(),
+            ALTREF_FRAME => "ALTREF".into(),
+            _ => format!("0b{:08b}", bitmask).into(),
+        }
+    }
 }
