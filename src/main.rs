@@ -11,6 +11,7 @@ use std::io::{Seek, SeekFrom};
 mod av1;
 mod bitio;
 mod ivf;
+mod mkv;
 mod obu;
 
 const WEBM_SIGNATURE: [u8; 4] = [0x1A, 0x45, 0xDF, 0xA3]; // EBML(Matroska/WebM)
@@ -172,6 +173,59 @@ fn parse_ivf_format<R: io::Read + io::Seek>(
     Ok(())
 }
 
+/// parse WebM format
+fn parse_webm_format<R: io::Read + io::Seek>(
+    mut reader: R,
+    fname: &str,
+    config: &AppConfig,
+) -> io::Result<()> {
+    // open Matroska/WebM file
+    let mut webm = mkv::open_mkvfile(&mut reader)?;
+    println!("{}: Matroska/WebM", fname);
+
+    let track_num = match webm.find_track(mkv::CODEC_V_AV1) {
+        Some(num) => num,
+        _ => {
+            println!("{}: unsupported codec", fname);
+            return Ok(());
+        }
+    };
+
+    let mut seq = av1::Sequence::new();
+
+    // parse WebM block
+    while let Ok(block) = webm.next_block(&mut reader) {
+        if block.size == 0 {
+            break;
+        }
+        if block.track_num != track_num {
+            continue;
+        }
+
+        if config.verbose > 0 {
+            println!(
+                "MKV F#{} flags=0x{:02x} size={}",
+                block.timecode, block.flags, block.size
+            );
+        }
+        let mut sz = block.size as u32;
+        // parse OBU(open bitstream unit)s
+        while sz > 0 {
+            let obu = obu::parse_obu_header(&mut reader, sz)?;
+            if config.verbose > 0 {
+                println!("  {}", obu);
+            }
+            sz -= obu.header_len + obu.obu_size;
+            let pos = reader.seek(SeekFrom::Current(0))?;
+            process_obu(&mut reader, &mut seq, &obu, config);
+            reader.seek(SeekFrom::Start(pos + obu.obu_size as u64))?;
+        }
+
+        reader.seek(SeekFrom::Start(block.offset + block.size))?;
+    }
+    Ok(())
+}
+
 /// parse low overhead bitstream format
 fn parse_obu_bitstream<R: io::Read + io::Seek>(
     mut reader: R,
@@ -212,7 +266,7 @@ fn process_file(fname: &str, config: &AppConfig) -> io::Result<()> {
 
     match fmt {
         FileFormat::IVF => parse_ivf_format(reader, fname, config)?,
-        FileFormat::WebM => println!("{}: (WebM format unsupported)", fname),
+        FileFormat::WebM => parse_webm_format(reader, fname, config)?,
         FileFormat::Bitstream => parse_obu_bitstream(reader, fname, config)?,
     };
     Ok(())
