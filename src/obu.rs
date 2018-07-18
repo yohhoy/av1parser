@@ -712,7 +712,8 @@ fn parse_tile_info<R: io::Read>(
         // MiColStarts[i] = MiCols
         ti.tile_cols = i;
 
-        let min_log2_tile_rows = cmp::max(min_log2_tiles - tile_cols_log2, 0);
+        let min_log2_tile_rows =
+            cmp::max(min_log2_tiles as isize - tile_cols_log2 as isize, 0) as usize;
         tile_rows_log2 = min_log2_tile_rows;
         while tile_rows_log2 < max_log2_tile_rows {
             let increment_tile_rows_log2 = br.f::<bool>(1)?; // f(1)
