@@ -1413,8 +1413,8 @@ pub fn parse_obu_header<R: io::Read>(bs: &mut R, sz: u32) -> io::Result<Obu> {
 ///
 /// parse sequence_header_obu()
 ///
-pub fn parse_sequence_header<R: io::Read>(bs: &mut R, sz: u32) -> Option<SequenceHeader> {
-    let mut br = BitReader::new(bs, sz);
+pub fn parse_sequence_header<R: io::Read>(bs: &mut R) -> Option<SequenceHeader> {
+    let mut br = BitReader::new(bs);
     let mut sh = SequenceHeader::default();
 
     sh.seq_profile = br.f::<u8>(3)?; // f(3)
@@ -1540,11 +1540,10 @@ pub fn parse_sequence_header<R: io::Read>(bs: &mut R, sz: u32) -> Option<Sequenc
 ///
 pub fn parse_frame_header<R: io::Read>(
     bs: &mut R,
-    sz: u32,
     sh: &SequenceHeader,
     rfman: &mut av1::RefFrameManager,
 ) -> Option<FrameHeader> {
-    let mut br = BitReader::new(bs, sz);
+    let mut br = BitReader::new(bs);
     let mut fh = FrameHeader::default();
 
     // uncompressed_header()

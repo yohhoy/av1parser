@@ -52,7 +52,7 @@ fn process_obu<R: io::Read>(
 ) {
     match obu.obu_type {
         obu::OBU_SEQUENCE_HEADER => {
-            if let Some(sh) = obu::parse_sequence_header(reader, obu.obu_size) {
+            if let Some(sh) = obu::parse_sequence_header(reader) {
                 if config.verbose > 1 {
                     println!("  {:?}", sh);
                 }
@@ -66,12 +66,9 @@ fn process_obu<R: io::Read>(
                 }
                 return;
             }
-            if let Some(fh) = obu::parse_frame_header(
-                reader,
-                obu.obu_size,
-                seq.sh.as_ref().unwrap(),
-                &mut seq.rfman,
-            ) {
+            if let Some(fh) =
+                obu::parse_frame_header(reader, seq.sh.as_ref().unwrap(), &mut seq.rfman)
+            {
                 if !fh.show_existing_frame {
                     if fh.show_frame {
                         println!(
@@ -165,7 +162,12 @@ fn parse_ivf_format<R: io::Read + io::Seek>(
             }
             sz -= obu.header_len + obu.obu_size;
             let pos = reader.seek(SeekFrom::Current(0))?;
-            process_obu(&mut reader, &mut seq, &obu, config);
+            process_obu(
+                &mut io::Read::take(&mut reader, obu.obu_size as u64),
+                &mut seq,
+                &obu,
+                config,
+            );
             reader.seek(SeekFrom::Start(pos + obu.obu_size as u64))?;
         }
         reader.seek(SeekFrom::Start(pos + frame.size as u64))?;
