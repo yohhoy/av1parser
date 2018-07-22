@@ -50,6 +50,7 @@ fn process_obu<R: io::Read>(
     obu: &obu::Obu,
     config: &AppConfig,
 ) {
+    let reader = &mut io::Read::take(reader, obu.obu_size as u64);
     match obu.obu_type {
         obu::OBU_SEQUENCE_HEADER => {
             if let Some(sh) = obu::parse_sequence_header(reader) {
@@ -57,6 +58,8 @@ fn process_obu<R: io::Read>(
                     println!("  {:?}", sh);
                 }
                 seq.sh = Some(sh);
+            } else {
+                println!("  invalid SequenceHeader");
             }
         }
         obu::OBU_FRAME_HEADER | obu::OBU_FRAME => {
@@ -162,12 +165,7 @@ fn parse_ivf_format<R: io::Read + io::Seek>(
             }
             sz -= obu.header_len + obu.obu_size;
             let pos = reader.seek(SeekFrom::Current(0))?;
-            process_obu(
-                &mut io::Read::take(&mut reader, obu.obu_size as u64),
-                &mut seq,
-                &obu,
-                config,
-            );
+            process_obu(&mut reader, &mut seq, &obu, config);
             reader.seek(SeekFrom::Start(pos + obu.obu_size as u64))?;
         }
         reader.seek(SeekFrom::Start(pos + frame.size as u64))?;
@@ -196,11 +194,9 @@ fn parse_webm_format<R: io::Read + io::Seek>(
     let mut seq = av1::Sequence::new();
 
     // parse WebM block
-    while let Ok(block) = webm.next_block(&mut reader) {
-        if block.size == 0 {
-            break;
-        }
+    while let Ok(Some(block)) = webm.next_block(&mut reader) {
         if block.track_num != track_num {
+            // skip non AV1 track data
             continue;
         }
 

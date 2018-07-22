@@ -135,10 +135,13 @@ impl Matroska {
     }
 
     /// read next block
-    pub fn next_block<R: io::Read + io::Seek>(&mut self, mut reader: R) -> io::Result<Block> {
+    pub fn next_block<R: io::Read + io::Seek>(
+        &mut self,
+        mut reader: R,
+    ) -> io::Result<Option<Block>> {
         if self.curr_offset == 0 {
             if self.clusters.len() <= self.curr_cluster {
-                return Ok(Block::new()); // end of clusters
+                return Ok(None); // end of clusters
             }
             self.curr_offset = self.clusters[self.curr_cluster].pos_begin;
         }
@@ -161,13 +164,13 @@ impl Matroska {
             let flags = buf[2];
 
             self.curr_offset = reader.seek(SeekFrom::Current(0))? + node_size;
-            return Ok(Block {
+            return Ok(Some(Block {
                 track_num: track_num as u64,
                 timecode: self.clusters[self.curr_cluster].timecode + (tc_offset as i64),
                 flags: flags,
                 offset: self.curr_offset,
                 size: node_size,
-            });
+            }));
         }
     }
 
