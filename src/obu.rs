@@ -137,16 +137,15 @@ pub struct ColorConfig {
     pub bit_depth: u8,  // BitDepth
     pub num_planes: u8, // NumPlanes
     // color_config()
-    pub mono_chrome: bool,                    // f(1)
-    pub color_description_present_flag: bool, // f(1)
-    pub color_primaries: u8,                  // f(8)
-    pub transfer_characteristics: u8,         // f(8)
-    pub matrix_coefficients: u8,              // f(8)
-    pub color_range: bool,                    // f(1)
-    pub subsampling_x: u8,                    // f(1)
-    pub subsampling_y: u8,                    // f(1)
-    pub chroma_sample_position: u8,           // f(2)
-    pub separate_uv_delta_q: bool,            // f(1)
+    pub mono_chrome: bool,            // f(1)
+    pub color_primaries: u8,          // f(8)
+    pub transfer_characteristics: u8, // f(8)
+    pub matrix_coefficients: u8,      // f(8)
+    pub color_range: bool,            // f(1)
+    pub subsampling_x: u8,            // f(1)
+    pub subsampling_y: u8,            // f(1)
+    pub chroma_sample_position: u8,   // f(2)
+    pub separate_uv_delta_q: bool,    // f(1)
 }
 
 /// Timing info
@@ -236,7 +235,6 @@ pub struct LoopFilterParams {
     pub loop_filter_level: [u8; 4],                          // f(6)
     pub loop_filter_sharpness: u8,                           // f(3)
     pub loop_filter_delta_enabled: bool,                     // f(1)
-    pub loop_filter_delta_update: bool,                      // f(1)
     pub loop_filter_ref_deltas: [i32; TOTAL_REFS_PER_FRAME], // su(1+6)
     pub loop_filter_mode_deltas: [i32; 2],                   // su(1+6)
 }
@@ -247,9 +245,8 @@ pub struct TileInfo {
     pub tile_cols: u16, // TileCols
     pub tile_rows: u16, // TileRows
     // tile_info()
-    pub uniform_tile_spacing_flag: bool, // f(1)
-    pub context_update_tile_id: u32,     // f(TileRowsLog2+TileColsLog2)
-    pub tile_size_bytes: usize,          // TileSizeBytes
+    pub context_update_tile_id: u32, // f(TileRowsLog2+TileColsLog2)
+    pub tile_size_bytes: usize,      // TileSizeBytes
 }
 
 /// Quantization params
@@ -262,7 +259,6 @@ pub struct QuantizationParams {
     pub deltaq_v_ac: i32, // DeltaQVAc
     // quantization_params()
     pub base_q_idx: u8,      // f(8)
-    pub diff_uv_delta: bool, // f(1)
     pub using_qmatrix: bool, // f(1)
     pub qm_y: u8,            // f(4)
     pub qm_u: u8,            // f(4)
@@ -449,8 +445,8 @@ fn parse_color_config<R: io::Read>(
         cc.mono_chrome = br.f::<bool>(1)?; // f(1)
     }
     cc.num_planes = if cc.mono_chrome { 1 } else { 3 };
-    cc.color_description_present_flag = br.f::<bool>(1)?; // f(1)
-    if cc.color_description_present_flag {
+    let color_description_present_flag = br.f::<bool>(1)?; // f(1)
+    if color_description_present_flag {
         cc.color_primaries = br.f::<u8>(8)?; // f(8)
         cc.transfer_characteristics = br.f::<u8>(8)?; // f(8)
         cc.matrix_coefficients = br.f::<u8>(8)?; // f(8)
@@ -628,8 +624,8 @@ fn parse_loop_filter_params<R: io::Read>(
     lfp.loop_filter_sharpness = br.f::<u8>(3)?; // f(3)
     lfp.loop_filter_delta_enabled = br.f::<bool>(1)?; // f(1)
     if lfp.loop_filter_delta_enabled {
-        lfp.loop_filter_delta_update = br.f::<bool>(1)?; // f(1)
-        if lfp.loop_filter_delta_update {
+        let loop_filter_delta_update = br.f::<bool>(1)?; // f(1)
+        if loop_filter_delta_update {
             for i in 0..TOTAL_REFS_PER_FRAME {
                 let update_ref_delta = br.f::<bool>(1)?; // f(1)
                 if update_ref_delta {
@@ -690,9 +686,9 @@ fn parse_tile_info<R: io::Read>(
         tile_log2(max_tile_area_sb, sb_rows * sb_cols),
     );
 
-    ti.uniform_tile_spacing_flag = br.f::<bool>(1)?; // f(1)
+    let uniform_tile_spacing_flag = br.f::<bool>(1)?; // f(1)
     let (mut tile_cols_log2, mut tile_rows_log2): (usize, usize);
-    if ti.uniform_tile_spacing_flag {
+    if uniform_tile_spacing_flag {
         tile_cols_log2 = min_log2_tile_cols;
         while tile_cols_log2 < max_log2_tile_cols {
             let increment_tile_cols_log2 = br.f::<bool>(1)?; // f(1)
@@ -789,14 +785,15 @@ fn parse_quantization_params<R: io::Read>(
     qp.base_q_idx = br.f::<u8>(8)?; // f(8)
     qp.deltaq_y_dc = read_delta_q(br)?; // read_delta_q()
     if cc.num_planes > 1 {
+        let diff_uv_delta;
         if cc.separate_uv_delta_q {
-            qp.diff_uv_delta = br.f::<bool>(1)?; // f(1)
+            diff_uv_delta = br.f::<bool>(1)?; // f(1)
         } else {
-            qp.diff_uv_delta = false;
+            diff_uv_delta = false;
         }
         qp.deltaq_u_dc = read_delta_q(br)?; // read_delta_q()
         qp.deltaq_u_ac = read_delta_q(br)?; // read_delta_q()
-        if qp.diff_uv_delta {
+        if diff_uv_delta {
             qp.deltaq_v_dc = read_delta_q(br)?; // read_delta_q()
             qp.deltaq_v_ac = read_delta_q(br)?; // read_delta_q()
         } else {
