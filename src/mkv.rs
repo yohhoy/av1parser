@@ -20,6 +20,9 @@ const ELEMENT_TRACKENTRY: u32 = 0xAE; // Tracks/TrackEntry
 const ELEMENT_TRACKNUMBER: u32 = 0xD7; // Tracks/TrackEntry/TrackNumber
 const ELEMENT_TRACKTYPE: u32 = 0x83; // Tracks/TrackEntry/TrackType
 const ELEMENT_CODECID: u32 = 0x86; // Tracks/TrackEntry/CodecID
+const ELEMENT_VIDEO: u32 = 0xE0; // Tracks/TrackEntry/Video
+const ELEMENT_PIXELWIDTH: u32 = 0xB0; // Tracks/TrackEntry/Video/PixelWidth
+const ELEMENT_PIXELHEIGHT: u32 = 0xBA; // Tracks/TrackEntry/Video/PixelHeight
 const ELEMENT_CUES: u32 = 0x1C53BB6B; // Cueing Data
 
 // Codec ID
@@ -134,6 +137,16 @@ impl Matroska {
         None
     }
 
+    /// get Video settings
+    pub fn get_videosetting(&self, track_num: u64) -> Option<VideoTrack> {
+        for track in self.tracks.iter() {
+            if track.track_num == track_num {
+                return track.setting.clone();
+            }
+        }
+        None
+    }
+
     /// read next block
     pub fn next_block<R: io::Read + io::Seek>(
         &mut self,
@@ -183,12 +196,36 @@ impl Matroska {
                 ELEMENT_TRACKNUMBER => entry.track_num = read_uint(&mut reader, node_size)?,
                 ELEMENT_TRACKTYPE => entry.track_type = read_uint(&mut reader, node_size)?,
                 ELEMENT_CODECID => entry.codec_id = read_string(&mut reader, node_size)?,
+                ELEMENT_VIDEO => {
+                    let mut node_body = Vec::with_capacity(node_size as usize);
+                    node_body.resize(node_size as usize, 0);
+                    reader.read_exact(&mut node_body)?;
+                    let node_body = io::Cursor::new(node_body);
+                    let video = Self::read_videoentry(node_body)?;
+                    entry.setting = Some(video);
+                }
                 _ => {
                     reader.seek(SeekFrom::Current(node_size))?;
                 }
             };
         }
         Ok(entry)
+    }
+
+    // Video element
+    fn read_videoentry<R: io::Read + io::Seek>(mut reader: R) -> io::Result<VideoTrack> {
+        let mut video = VideoTrack::new();
+        while let Ok(node) = read_elementid(&mut reader) {
+            let node_size = read_datasize(&mut reader)?;
+            match node {
+                ELEMENT_PIXELWIDTH => video.pixel_width = read_uint(&mut reader, node_size)?,
+                ELEMENT_PIXELHEIGHT => video.pixel_height = read_uint(&mut reader, node_size)?,
+                _ => {
+                    reader.seek(SeekFrom::Current(node_size))?;
+                }
+            }
+        }
+        Ok(video)
     }
 
     // Track element
@@ -264,6 +301,7 @@ struct TrackEntey {
     track_num: u64,
     track_type: u64,
     codec_id: String,
+    setting: Option<VideoTrack>,
 }
 
 impl TrackEntey {
@@ -272,6 +310,25 @@ impl TrackEntey {
             track_num: 0,
             track_type: 0,
             codec_id: "".into(),
+            setting: None,
+        }
+    }
+}
+
+///
+/// Matroska/TrackEntry/Video settings
+///
+#[derive(Debug, Clone)]
+pub struct VideoTrack {
+    pub pixel_width: u64,  // PixelWidth
+    pub pixel_height: u64, // PixelHeight
+}
+
+impl VideoTrack {
+    fn new() -> Self {
+        VideoTrack {
+            pixel_width: 0,
+            pixel_height: 0,
         }
     }
 }
@@ -306,18 +363,6 @@ pub struct Block {
     pub flags: u8,
     pub offset: u64,
     pub size: u64,
-}
-
-impl Block {
-    fn new() -> Self {
-        Block {
-            track_num: 0,
-            timecode: 0,
-            flags: 0,
-            offset: 0,
-            size: 0,
-        }
-    }
 }
 
 ///

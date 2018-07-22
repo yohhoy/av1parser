@@ -181,15 +181,25 @@ fn parse_webm_format<R: io::Read + io::Seek>(
 ) -> io::Result<()> {
     // open Matroska/WebM file
     let mut webm = mkv::open_mkvfile(&mut reader)?;
-    println!("{}: Matroska/WebM", fname);
 
-    let track_num = match webm.find_track(mkv::CODEC_V_AV1) {
+    let codec_id = mkv::CODEC_V_AV1;
+    let track_num = match webm.find_track(codec_id) {
         Some(num) => num,
         _ => {
-            println!("{}: unsupported codec", fname);
+            println!("{}: Matroska/WebM \"{}\" codec not found", fname, codec_id);
             return Ok(());
         }
     };
+    match webm.get_videosetting(track_num) {
+        Some(video) => println!(
+            "{}: Matroska/WebM codec=\"{}\" size={}x{}",
+            fname, codec_id, video.pixel_width, video.pixel_height
+        ),
+        None => println!(
+            "{}: Matroska/WebM codec=\"{}\" size=(unknown)",
+            fname, codec_id
+        ),
+    }
 
     let mut seq = av1::Sequence::new();
 
