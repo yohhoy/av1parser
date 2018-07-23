@@ -43,8 +43,9 @@ pub struct RefFrameManager {
     pub ref_order_hint: [u8; NUM_REF_FRAMES], // RefOrderHint[i]
     pub saved_gm_params: [[[i32; 6]; NUM_REF_FRAMES]; NUM_REF_FRAMES], // SavedGmParams[i][ref][j]
     // user data
-    pub frame_counter: i64,
-    pub frame_dts: [i64; NUM_REF_FRAMES],
+    pub decode_order: i64,  // frame decoding oreder
+    pub present_order: i64, // frame presentation order
+    pub frame_buf: [i64; NUM_REF_FRAMES],
 }
 
 impl RefFrameManager {
@@ -55,8 +56,9 @@ impl RefFrameManager {
             ref_frame_type: [0; NUM_REF_FRAMES],
             ref_order_hint: [0; NUM_REF_FRAMES],
             saved_gm_params: [[[0; 6]; NUM_REF_FRAMES]; NUM_REF_FRAMES],
-            frame_counter: 0,
-            frame_dts: [i64::min_value(); NUM_REF_FRAMES],
+            decode_order: 0,
+            present_order: 0,
+            frame_buf: [i64::min_value(); NUM_REF_FRAMES],
         }
     }
 
@@ -86,6 +88,11 @@ impl RefFrameManager {
         }
     }
 
+    /// Output process
+    pub fn output_process(&mut self, _: &obu::FrameHeader) {
+        self.present_order += 1;
+    }
+
     /// Reference frame update process
     pub fn update_process(&mut self, fh: &obu::FrameHeader) {
         for i in 0..NUM_REF_FRAMES {
@@ -101,10 +108,10 @@ impl RefFrameManager {
                     }
                 }
                 // user data
-                self.frame_dts[i] = self.frame_counter;
+                self.frame_buf[i] = self.decode_order;
             }
         }
-        self.frame_counter += 1;
+        self.decode_order += 1;
     }
 }
 
@@ -143,6 +150,7 @@ pub mod stringify {
         const ALTREF2_FRAME: u8 = 1 << super::ALTREF2_FRAME;
         const ALTREF_FRAME: u8 = 1 << super::ALTREF_FRAME;
         match bitmask {
+            0 => "none".into(),
             255 => "all".into(),
             INTRA_FRAME => "INTRA".into(),
             LAST_FRAME => "LAST".into(),

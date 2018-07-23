@@ -73,18 +73,22 @@ fn process_obu<R: io::Read>(
                 obu::parse_frame_header(reader, seq.sh.as_ref().unwrap(), &mut seq.rfman)
             {
                 if !fh.show_existing_frame {
+                    let error_resilient = if fh.error_resilient_mode { "*" } else { "" };
                     if fh.show_frame {
                         println!(
-                            "  #{} {}, update({}), show",
-                            seq.rfman.frame_counter,
+                            "  #{} {}{}, update({}), show@{}",
+                            seq.rfman.decode_order,
                             av1::stringify::frame_type(fh.frame_type),
-                            av1::stringify::ref_frame(fh.refresh_frame_flags)
+                            error_resilient,
+                            av1::stringify::ref_frame(fh.refresh_frame_flags),
+                            seq.rfman.present_order
                         );
                     } else {
                         println!(
-                            "  #{} {}, update({}), {}",
-                            seq.rfman.frame_counter,
+                            "  #{} {}{}, update({}), {}",
+                            seq.rfman.decode_order,
                             av1::stringify::frame_type(fh.frame_type),
+                            error_resilient,
                             av1::stringify::ref_frame(fh.refresh_frame_flags),
                             if fh.showable_frame {
                                 "showable"
@@ -96,14 +100,19 @@ fn process_obu<R: io::Read>(
                 } else {
                     let show_idx = fh.frame_to_show_map_idx;
                     println!(
-                        "  #{} show({})",
-                        seq.rfman.frame_dts[show_idx as usize],
-                        av1::stringify::ref_frame(1 << show_idx)
+                        "    #{} ({}) show@{}",
+                        seq.rfman.frame_buf[show_idx as usize],
+                        av1::stringify::ref_frame(1 << show_idx),
+                        seq.rfman.present_order,
                     );
                 }
-
                 if config.verbose > 1 {
                     println!("  {:?}", fh);
+                }
+
+                // decode_frame_wrapup(): Decode frame wrapup process
+                if fh.show_frame || fh.show_existing_frame {
+                    seq.rfman.output_process(&fh);
                 }
                 if obu.obu_type == obu::OBU_FRAME {
                     if config.verbose > 2 {
