@@ -70,7 +70,7 @@ impl<R: io::Read> BitReader<R> {
         Some(FromU32::from_u32(x))
     }
 
-    // su(n)
+    /// su(n)
     pub fn su(&mut self, n: usize) -> Option<i32> {
         let mut value = self.f::<u32>(n)? as i32;
         let sign_mask = 1 << (n - 1);
@@ -80,7 +80,7 @@ impl<R: io::Read> BitReader<R> {
         Some(value)
     }
 
-    // ns(n)
+    /// ns(n)
     pub fn ns(&mut self, n: u32) -> Option<u32> {
         let w = Self::floor_log2(n) + 1;
         let m = (1 << w) - n;

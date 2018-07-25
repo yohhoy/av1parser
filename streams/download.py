@@ -26,7 +26,7 @@ def download_file(fname):
 
 def download_ivfs():
     xml = etree.fromstring(requests.get(URL).content)
-    ivf_list = xml.xpath('//s3:Key/text()', namespaces={'s3':XMLNS})
+    ivf_list = xml.xpath('//s3:Key/text()', namespaces={'s3': XMLNS})
     for fname in ivf_list:
         if not fname.endswith('.ivf'):
             continue

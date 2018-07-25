@@ -1,9 +1,9 @@
 # av1parser
 [![MIT License](http://img.shields.io/badge/license-MIT-blue.svg?style=flat)](LICENSE)
 
-[AOM(Allianc of Open Media)][aom]'s [AV1 video codec bitstream][av1-spec] parser.
+[AOM(Alliance of Open Media)][aom]'s [AV1 video codec bitstream][av1-spec] parser.
 
-The program reads AV1 bistreams, parses header-level syntax elements and analyze high-level structure of coded sequence.
+The program read AV1 bistreams, parse header-level syntax elements, and analyze high-level structure of coded video sequence.
 
 This project is not intended to decode video frames.
 
