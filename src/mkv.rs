@@ -129,22 +129,18 @@ impl Matroska {
 
     /// find track with CodecID
     pub fn find_track(&self, codec_id: &str) -> Option<u64> {
-        for track in self.tracks.iter() {
-            if track.codec_id == codec_id {
-                return Some(track.track_num);
-            }
-        }
-        None
+        self.tracks
+            .iter()
+            .find(|&t| t.codec_id == codec_id)
+            .map(|t| t.track_num)
     }
 
     /// get Video settings
     pub fn get_videosetting(&self, track_num: u64) -> Option<VideoTrack> {
-        for track in self.tracks.iter() {
-            if track.track_num == track_num {
-                return track.setting.clone();
-            }
-        }
-        None
+        self.tracks
+            .iter()
+            .find(|&t| t.track_num == track_num)
+            .and_then(|t| t.setting.clone())
     }
 
     /// read next block
