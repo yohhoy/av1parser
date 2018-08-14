@@ -131,16 +131,16 @@ impl Matroska {
     pub fn find_track(&self, codec_id: &str) -> Option<u64> {
         self.tracks
             .iter()
-            .find(|&t| t.codec_id == codec_id)
+            .find(|t| t.codec_id == codec_id)
             .map(|t| t.track_num)
     }
 
     /// get Video settings
-    pub fn get_videosetting(&self, track_num: u64) -> Option<VideoTrack> {
+    pub fn get_videosetting(&self, track_num: u64) -> Option<&VideoTrack> {
         self.tracks
             .iter()
-            .find(|&t| t.track_num == track_num)
-            .and_then(|t| t.setting.clone())
+            .find(|t| t.track_num == track_num)
+            .and_then(|t| t.setting.as_ref())
     }
 
     /// read next block
@@ -314,7 +314,7 @@ impl TrackEntey {
 ///
 /// Matroska/TrackEntry/Video settings
 ///
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct VideoTrack {
     pub pixel_width: u64,  // PixelWidth
     pub pixel_height: u64, // PixelHeight
