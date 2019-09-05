@@ -4,7 +4,7 @@
 
 [AOM(Alliance of Open Media)][aom]'s [AV1 video codec bitstream][av1-spec] parser.
 
-The program read AV1 bistreams, parse header-level syntax elements, and analyze high-level structure of coded video sequence.
+The program reads AV1 bitstreams, parses header-level syntax elements, and analyzes the high-level structure of the coded video sequence.
 
 This project is not intended to decode video frames.
 
@@ -13,13 +13,13 @@ This project is not intended to decode video frames.
 
 
 ## Usage (Example)
-Run with maxmum verbose output:
+Run with maximum verbose output:
 ```
 $ cargo run stream/parkjoy.webm -vvv
 ...
 ```
 
-(The semantics of each syntax elements are defined in AV1 specficiation. Enjoy it! :P)
+(The semantics of each syntax element are defined in AV1 specification. Enjoy it! :P)
 
 
 ## Details
