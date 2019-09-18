@@ -240,7 +240,7 @@ pub struct LoopFilterParams {
 }
 
 /// Tile info
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct TileInfo {
     pub tile_cols: u16, // TileCols
     pub tile_rows: u16, // TileRows
