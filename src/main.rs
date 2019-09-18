@@ -278,12 +278,12 @@ fn main() -> std::io::Result<()> {
         .arg(Arg::from_usage("[v]... -v --verbose 'Show verbose log'"));
 
     // get commandline flags
-    let mathces = app.get_matches();
+    let matches = app.get_matches();
     let config = AppConfig {
-        verbose: mathces.occurrences_of("v"),
+        verbose: matches.occurrences_of("v"),
     };
 
-    for fname in mathces.values_of("INPUT").unwrap() {
+    for fname in matches.values_of("INPUT").unwrap() {
         process_file(fname, &config)?;
     }
     Ok(())
