@@ -17,8 +17,8 @@ pub struct IvfHeader {
     pub codec: [u8; 4], // FourCC
     pub width: u16,     // [pel]
     pub height: u16,    // [pel]
-    pub framerate: u16,
-    pub timescale: u16,
+    pub framerate: u32,
+    pub timescale: u32,
     pub nframes: u32,
 }
 
@@ -45,7 +45,7 @@ pub fn parse_ivf_header(mut ivf: &[u8]) -> Result<IvfHeader, String> {
             hex::encode_upper(sig)
         ));
     }
-    // versoin (2b)
+    // version (2b)
     let mut ver = [0; 2];
     ivf.read_exact(&mut ver).unwrap();
     let ver = LittleEndian::read_u16(&ver);
@@ -69,13 +69,13 @@ pub fn parse_ivf_header(mut ivf: &[u8]) -> Result<IvfHeader, String> {
     ivf.read_exact(&mut height).unwrap();
     let width = LittleEndian::read_u16(&width);
     let height = LittleEndian::read_u16(&height);
-    // framerate(2b), timescale(2b)
-    let mut framerate = [0; 2];
-    let mut timescale = [0; 2];
+    // framerate (4b), timescale (4b)
+    let mut framerate = [0; 4];
+    let mut timescale = [0; 4];
     ivf.read_exact(&mut framerate).unwrap();
     ivf.read_exact(&mut timescale).unwrap();
-    let framerate = LittleEndian::read_u16(&framerate);
-    let timescale = LittleEndian::read_u16(&timescale);
+    let framerate = LittleEndian::read_u32(&framerate);
+    let timescale = LittleEndian::read_u32(&timescale);
     // number of frames (4b)
     let mut nframes = [0; 4];
     ivf.read_exact(&mut nframes).unwrap();
