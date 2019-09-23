@@ -114,7 +114,7 @@ fn process_obu<R: io::Read>(
                 if fh.show_frame || fh.show_existing_frame {
                     seq.rfman.output_process(&fh);
                 }
-                if obu.obu_type == obu::OBU_FRAME {
+                if !fh.show_existing_frame {
                     if config.verbose > 2 {
                         println!("  {:?}", seq.rfman);
                     }
