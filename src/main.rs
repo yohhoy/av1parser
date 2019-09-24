@@ -1,8 +1,10 @@
+extern crate av1parser;
 extern crate byteorder;
 #[macro_use]
 extern crate clap;
 extern crate hex;
 
+use av1parser::*;
 use clap::{App, Arg};
 use std::fs;
 use std::io;
@@ -14,31 +16,9 @@ mod ivf;
 mod mkv;
 mod obu;
 
-const WEBM_SIGNATURE: [u8; 4] = [0x1A, 0x45, 0xDF, 0xA3]; // EBML(Matroska/WebM)
-
-const FCC_AV01: [u8; 4] = *b"AV01"; // AV1 codec
-
 /// application global config
 struct AppConfig {
     verbose: u64,
-}
-
-enum FileFormat {
-    IVF,       // IVF format
-    WebM,      // Matroska/WebM format
-    Bitstream, // Raw bitstream
-}
-
-/// probe file format
-fn probe_fileformat<R: io::Read>(reader: &mut R) -> io::Result<FileFormat> {
-    let mut b4 = [0; 4];
-    reader.read_exact(&mut b4)?;
-    let type_ = match b4 {
-        ivf::IVF_SIGNATURE => FileFormat::IVF,
-        WEBM_SIGNATURE => FileFormat::WebM,
-        _ => FileFormat::Bitstream,
-    };
-    Ok(type_)
 }
 
 ///
@@ -298,12 +278,12 @@ fn main() -> std::io::Result<()> {
         .arg(Arg::from_usage("[v]... -v --verbose 'Show verbose log'"));
 
     // get commandline flags
-    let mathces = app.get_matches();
+    let matches = app.get_matches();
     let config = AppConfig {
-        verbose: mathces.occurrences_of("v"),
+        verbose: matches.occurrences_of("v"),
     };
 
-    for fname in mathces.values_of("INPUT").unwrap() {
+    for fname in matches.values_of("INPUT").unwrap() {
         process_file(fname, &config)?;
     }
     Ok(())

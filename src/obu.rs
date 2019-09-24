@@ -18,7 +18,7 @@ pub const OBU_TILE_LIST: u8 = 8;
 pub const OBU_PADDING: u8 = 15;
 
 use av1::{
-    ALTREF2_FRAME, LAST2_FRAME, LAST3_FRAME, ALTREF_FRAME, BWDREF_FRAME, GOLDEN_FRAME, INTRA_FRAME,
+    ALTREF2_FRAME, ALTREF_FRAME, BWDREF_FRAME, GOLDEN_FRAME, INTRA_FRAME, LAST2_FRAME, LAST3_FRAME,
     LAST_FRAME,
 };
 
@@ -240,7 +240,7 @@ pub struct LoopFilterParams {
 }
 
 /// Tile info
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy)]
 pub struct TileInfo {
     pub tile_cols: u16, // TileCols
     pub tile_rows: u16, // TileRows
