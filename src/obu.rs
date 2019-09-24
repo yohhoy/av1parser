@@ -872,7 +872,7 @@ fn parse_segmentation_params<R: io::Read>(
             sp.segmentation_update_data = br.f::<bool>(1)?; // f(1)
         }
         if sp.segmentation_update_data {
-            for i in 0..MAX_SEGMENTS {
+            for _ in 0..MAX_SEGMENTS {
                 for j in 0..SEG_LVL_MAX {
                     let feature_value;
                     let feature_enabled = br.f::<bool>(1)?; // f(1)
@@ -880,7 +880,7 @@ fn parse_segmentation_params<R: io::Read>(
                     // FeatureEnabled[i][j] = feature_enabled
                     let mut clipped_value = 0;
                     if feature_enabled {
-                        let bits_to_read = Segmentation_Feature_Bits[i];
+                        let bits_to_read = Segmentation_Feature_Bits[j];
                         let limit = Segmentation_Feature_Max[j];
                         if Segmentation_Feature_Signed[j] == 1 {
                             feature_value = br.su(1 + bits_to_read)?; // su(1+bitsToRead)
