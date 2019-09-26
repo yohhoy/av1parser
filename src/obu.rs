@@ -132,7 +132,7 @@ impl fmt::Display for Obu {
 }
 
 // Color config
-#[derive(Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct ColorConfig {
     pub bit_depth: u8,  // BitDepth
     pub num_planes: u8, // NumPlanes
@@ -149,7 +149,7 @@ pub struct ColorConfig {
 }
 
 /// Timing info
-#[derive(Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct TimingInfo {
     // timing_info()
     pub num_units_in_display_tick: u32, // f(32)
@@ -161,7 +161,7 @@ pub struct TimingInfo {
 ///
 /// operating point in Sequence Header OBU
 ///
-#[derive(Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct OperatingPoint {
     pub operating_point_idc: u16, // f(12)
     pub seq_level_idx: u8,        // f(5)
@@ -171,7 +171,7 @@ pub struct OperatingPoint {
 ///
 /// Sequence header OBU
 ///
-#[derive(Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct SequenceHeader {
     pub seq_profile: u8,                          // f(3)
     pub still_picture: bool,                      // f(1)
