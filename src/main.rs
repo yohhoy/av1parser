@@ -102,6 +102,15 @@ fn process_obu<R: io::Read>(
                 }
             }
         }
+        obu::OBU_TILE_LIST => {
+            if let Some(tl) = obu::parse_tile_list(reader) {
+                if config.verbose > 2 {
+                    println!("  {:?}", tl);
+                }
+            } else {
+                println!("  invalid TileList")
+            }
+        }
         _ => {}
     }
 }
