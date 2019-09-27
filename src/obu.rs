@@ -381,6 +381,26 @@ pub struct FrameHeader {
     pub reduced_tx_set: bool,                     // f(1)
 }
 
+///
+/// Tile list OBU
+///
+#[derive(Debug, Default)]
+pub struct TileList {
+    pub output_frame_width_in_tiles_minus_1: u8,  // f(8)
+    pub output_frame_height_in_tiles_minus_1: u8, // f(8)
+    pub tile_count_minus_1: u16,                  // f(16)
+    pub tile_list_entries: Vec<TileListEntry>,    // tile_list_entry()
+}
+
+/// Tile list entry parameters
+#[derive(Debug, Default)]
+pub struct TileListEntry {
+    pub anchor_frame_idx: u8,        // f(8)
+    pub anchor_tile_row: u8,         // f(8)
+    pub anchor_tile_col: u8,         // f(8)
+    pub tile_data_size_minus_1: u16, // f(16)
+}
+
 /// return (MiCols, MiRows)
 fn compute_image_size(fs: &FrameSize) -> (u32, u32) {
     (
@@ -1807,4 +1827,36 @@ pub fn parse_frame_header<R: io::Read>(
     parse_film_grain_params(&mut br, sh, &fh)?; // film_grain_params()
 
     Some(fh)
+}
+
+///
+/// parse tile_list_obu()
+///
+pub fn parse_tile_list<R: io::Read>(bs: &mut R) -> Option<TileList> {
+    let mut br = BitReader::new(bs);
+    let mut tl = TileList::default();
+
+    tl.output_frame_width_in_tiles_minus_1 = br.f::<u8>(8)?;
+    tl.output_frame_height_in_tiles_minus_1 = br.f::<u8>(8)?;
+    tl.tile_count_minus_1 = br.f::<u16>(16)?;
+
+    for _ in 0..=tl.tile_count_minus_1 {
+        tl.tile_list_entries.push(parse_tile_list_entry(&mut br)?);
+    }
+
+    Some(tl)
+}
+
+///
+/// parse tile_list_entry()
+///
+fn parse_tile_list_entry<R: io::Read>(br: &mut BitReader<R>) -> Option<TileListEntry> {
+    let mut tle = TileListEntry::default();
+
+    tle.anchor_frame_idx = br.f::<u8>(8)?;
+    tle.anchor_tile_row = br.f::<u8>(8)?;
+    tle.anchor_tile_col = br.f::<u8>(8)?;
+    tle.tile_data_size_minus_1 = br.f::<u16>(16)?;
+
+    Some(tle)
 }
