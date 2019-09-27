@@ -36,7 +36,7 @@ Supported OBU types:
 - OBU_TEMPORAL_DELIMITER (no payload)
 - OBU_FRAME_HEADER
 - OBU_FRAME (header part only)
-- OBU_TILE_LIST (no payload)
+- OBU_TILE_LIST
 
 
 ## License
