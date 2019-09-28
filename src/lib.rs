@@ -4,6 +4,7 @@ extern crate hex;
 pub mod av1;
 mod bitio;
 pub mod ivf;
+pub mod mkv;
 pub mod obu;
 
 use std::io;
