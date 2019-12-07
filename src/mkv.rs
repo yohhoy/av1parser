@@ -68,7 +68,7 @@ fn read_varint<R: io::Read>(mut reader: R) -> io::Result<(i64, usize)> {
             "Invalid leading zero bits",
         ));
     }
-    value &= (1 << (7 - lzcnt)) - 1;;
+    value &= (1 << (7 - lzcnt)) - 1;
     if lzcnt > 0 {
         let mut buf = [0; 7];
         reader.take(lzcnt as u64).read(&mut buf)?;
