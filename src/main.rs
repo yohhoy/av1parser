@@ -128,8 +128,14 @@ fn parse_ivf_format<R: io::Read + io::Seek>(
         Ok(hdr) => {
             let codec = String::from_utf8(hdr.codec.to_vec()).unwrap();
             println!(
-                "{}: IVF codec={:?} size={}x{} fr={} scale={} n={}",
-                fname, codec, hdr.width, hdr.height, hdr.framerate, hdr.timescale, hdr.nframes
+                "{}: IVF codec={:?} size={}x{} timescale={}/{} length={}",
+                fname,
+                codec,
+                hdr.width,
+                hdr.height,
+                hdr.timescale_num,
+                hdr.timescale_den,
+                hdr.length
             );
             if hdr.codec != FCC_AV01 {
                 println!(

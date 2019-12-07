@@ -17,9 +17,9 @@ pub struct IvfHeader {
     pub codec: [u8; 4], // FourCC
     pub width: u16,     // [pel]
     pub height: u16,    // [pel]
-    pub framerate: u32,
-    pub timescale: u32,
-    pub nframes: u32,
+    pub timescale_num: u32,
+    pub timescale_den: u32,
+    pub length: u32, // nframes in libvpx, duration in ffmpeg
 }
 
 ///
@@ -69,25 +69,25 @@ pub fn parse_ivf_header(mut ivf: &[u8]) -> Result<IvfHeader, String> {
     ivf.read_exact(&mut height).unwrap();
     let width = LittleEndian::read_u16(&width);
     let height = LittleEndian::read_u16(&height);
-    // framerate (4b), timescale (4b)
-    let mut framerate = [0; 4];
-    let mut timescale = [0; 4];
-    ivf.read_exact(&mut framerate).unwrap();
-    ivf.read_exact(&mut timescale).unwrap();
-    let framerate = LittleEndian::read_u32(&framerate);
-    let timescale = LittleEndian::read_u32(&timescale);
-    // number of frames (4b)
-    let mut nframes = [0; 4];
-    ivf.read_exact(&mut nframes).unwrap();
-    let nframes = LittleEndian::read_u32(&nframes);
+    // timescale_num (4b), timescale_den (4b)
+    let mut timescale_num = [0; 4];
+    let mut timescale_den = [0; 4];
+    ivf.read_exact(&mut timescale_num).unwrap();
+    ivf.read_exact(&mut timescale_den).unwrap();
+    let timescale_num = LittleEndian::read_u32(&timescale_num);
+    let timescale_den = LittleEndian::read_u32(&timescale_den);
+    // length (4b)
+    let mut length = [0; 4];
+    ivf.read_exact(&mut length).unwrap();
+    let length = LittleEndian::read_u32(&length);
 
     Ok(IvfHeader {
-        codec: codec,
-        width: width,
-        height: height,
-        framerate: framerate,
-        timescale: timescale,
-        nframes: nframes,
+        codec,
+        width,
+        height,
+        timescale_num,
+        timescale_den,
+        length,
     })
 }
 
