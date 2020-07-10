@@ -9,7 +9,7 @@ The program reads AV1 bitstreams, parses header-level syntax elements, and analy
 This project is not intended to decode video frames.
 
 [aom]: https://aomedia.org/
-[av1-spec]: https://aomedia.org/av1-bitstream-and-decoding-process-specification/
+[av1-spec]: https://aomedia.org/av1/specification/
 
 
 ## Usage (Example)
