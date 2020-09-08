@@ -1382,7 +1382,7 @@ fn parse_film_grain_params<R: io::Read>(
 
     if !fgp.update_grain {
         fgp.film_grain_params_ref_idx = br.f::<u8>(3)?;
-        
+
         assert!(fgp.film_grain_params_ref_idx <= (REFS_PER_FRAME - 1) as u8);
     }
 
