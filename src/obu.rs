@@ -376,6 +376,7 @@ pub struct FrameHeader {
     pub tx_mode: u8,                              // TxMode
     pub skip_mode_params: SkipModeParams,         // skip_mode_params()
     pub global_motion_params: GlobalMotionParams, // global_motion_params()
+    pub film_grain_params: FilmGrainParams,       // film_grain_params()
     pub reference_select: bool,                   // f(1)
     pub allow_warped_motion: bool,                // f(1)
     pub reduced_tx_set: bool,                     // f(1)
@@ -399,6 +400,40 @@ pub struct TileListEntry {
     pub anchor_tile_row: u8,         // f(8)
     pub anchor_tile_col: u8,         // f(8)
     pub tile_data_size_minus_1: u16, // f(16)
+}
+
+/// Film grain synthesis parameters
+#[derive(Debug, Default)]
+pub struct FilmGrainParams {
+    pub apply_grain: bool,             // f(1)
+    pub grain_seed: u16,               // f(16)
+    pub update_grain: bool,            // f(1)
+    pub film_grain_params_ref_idx: u8, // f(3)
+    pub num_y_points: u8,              // f(4)
+    pub point_y_value: Vec<u8>,
+    pub point_y_scaling: Vec<u8>,
+    pub chroma_scaling_from_luma: bool, // f(1)
+    pub num_cb_points: u8,              // f(4)
+    pub point_cb_value: Vec<u8>,
+    pub point_cb_scaling: Vec<u8>,
+    pub num_cr_points: u8, // f(4)
+    pub point_cr_value: Vec<u8>,
+    pub point_cr_scaling: Vec<u8>,
+    pub grain_scaling_minus_8: u8, // f(2)
+    pub ar_coeff_lag: u8,          // f(2)
+    pub ar_coeffs_y_plus_128: Vec<u8>,
+    pub ar_coeffs_cb_plus_128: Vec<u8>,
+    pub ar_coeffs_cr_plus_128: Vec<u8>,
+    pub ar_coeff_shift_minus_6: u8,     // f(2)
+    pub grain_scale_shift: u8,          // f(2)
+    pub cb_mult: u8,                    // f(8)
+    pub cb_luma_mult: u8,               // f(8)
+    pub cb_offset: u8,                  // f(9)
+    pub cr_mult: u8,                    // f(8)
+    pub cr_luma_mult: u8,               // f(8)
+    pub cr_offset: u8,                  // f(9)
+    pub overlap_flag: bool,             // f(1)
+    pub clip_to_restricted_range: bool, // f(1)
 }
 
 /// return (MiCols, MiRows)
@@ -1323,18 +1358,123 @@ fn parse_film_grain_params<R: io::Read>(
     br: &mut BitReader<R>,
     sh: &SequenceHeader,
     fh: &FrameHeader,
-) -> Option<()> {
+) -> Option<FilmGrainParams> {
+    let mut fgp = FilmGrainParams::default();
+
     if !sh.film_grain_params_present || (!fh.show_frame && fh.showable_frame) {
         // reset_grain_params()
-        return Some(());
+        return Some(fgp);
     }
-    let apply_grain = br.f::<bool>(1)?; // f(1)
-    if !apply_grain {
+
+    fgp.apply_grain = br.f::<bool>(1)?; // f(1)
+    if !fgp.apply_grain {
         // reset_grain_params()
-        return Some(());
+        return Some(fgp);
     }
-    unimplemented!("film_grain_params()");
-    //Some(())
+
+    fgp.grain_seed = br.f::<u16>(16)?; // f(16)
+
+    fgp.update_grain = if fh.frame_type == INTER_FRAME {
+        br.f::<bool>(1)? // f(1)
+    } else {
+        true // 1
+    };
+
+    if !fgp.update_grain {
+        fgp.film_grain_params_ref_idx = br.f::<u8>(3)?;
+
+        assert!(fgp.film_grain_params_ref_idx <= (REFS_PER_FRAME - 1) as u8);
+    }
+
+    fgp.num_y_points = br.f::<u8>(4)?;
+
+    assert!(fgp.num_y_points <= 14);
+
+    for _ in 0..fgp.num_y_points {
+        fgp.point_y_value.push(br.f::<u8>(8)?); // f(8)
+        fgp.point_y_scaling.push(br.f::<u8>(8)?); // f(8)
+    }
+
+    let color_config = sh.color_config;
+    fgp.chroma_scaling_from_luma = if color_config.mono_chrome {
+        false // 0
+    } else {
+        br.f::<bool>(1)? // f(1)
+    };
+
+    if sh.color_config.mono_chrome
+        || fgp.chroma_scaling_from_luma
+        || (color_config.subsampling_x == 1
+            && color_config.subsampling_y == 1
+            && fgp.num_y_points == 0)
+    {
+        fgp.num_cb_points = 0;
+        fgp.num_cr_points = 0;
+    } else {
+        fgp.num_cb_points = br.f::<u8>(4)?; // f(4)
+
+        for _ in 0..fgp.num_cb_points {
+            fgp.point_cb_value.push(br.f::<u8>(8)?); // f(8)
+            fgp.point_cb_scaling.push(br.f::<u8>(8)?); // f(8)
+        }
+
+        fgp.num_cr_points = br.f::<u8>(4)?; // f(4)
+
+        for _ in 0..fgp.num_cr_points {
+            fgp.point_cr_value.push(br.f::<u8>(8)?); // f(8)
+            fgp.point_cr_scaling.push(br.f::<u8>(8)?); // f(8)
+        }
+    }
+
+    assert!(fgp.num_cb_points <= 10);
+    assert!(fgp.num_cr_points <= 10);
+
+    fgp.grain_scaling_minus_8 = br.f::<u8>(2)?; // f(2)
+    fgp.ar_coeff_lag = br.f::<u8>(2)?; // f(2)
+    let num_pos_luma = 2 * fgp.ar_coeff_lag * (fgp.ar_coeff_lag + 1);
+    let num_pos_chroma;
+
+    if fgp.num_y_points != 0 {
+        num_pos_chroma = num_pos_luma + 1;
+
+        for _ in 0..num_pos_luma {
+            fgp.ar_coeffs_y_plus_128.push(br.f::<u8>(8)?); // f(8)
+        }
+    } else {
+        num_pos_chroma = num_pos_luma;
+    }
+
+    if fgp.chroma_scaling_from_luma || fgp.num_cb_points != 0 {
+        for _ in 0..num_pos_chroma {
+            fgp.ar_coeffs_cb_plus_128.push(br.f::<u8>(8)?); // f(8)
+        }
+    }
+
+    if fgp.chroma_scaling_from_luma || fgp.num_cr_points != 0 {
+        for _ in 0..num_pos_chroma {
+            fgp.ar_coeffs_cr_plus_128.push(br.f::<u8>(8)?); // f(8)
+        }
+    }
+
+    fgp.ar_coeff_shift_minus_6 = br.f::<u8>(2)?; // f(2)
+    fgp.grain_scale_shift = br.f::<u8>(2)?; // f(2)
+
+    if fgp.num_cb_points != 0 {
+        fgp.cb_mult = br.f::<u8>(8)?; // f(8)
+        fgp.cb_luma_mult = br.f::<u8>(8)?; // f(8)
+        fgp.cb_offset = br.f::<u8>(9)?; // f(9)
+    }
+
+    if fgp.num_cr_points != 0 {
+        fgp.cr_mult = br.f::<u8>(8)?; // f(8)
+        fgp.cr_luma_mult = br.f::<u8>(8)?; // f(8)
+        fgp.cr_offset = br.f::<u8>(9)?; // f(9)
+    }
+
+    fgp.overlap_flag = br.f::<bool>(1)?; // f(1)
+    fgp.clip_to_restricted_range = br.f::<bool>(1)?; // f(1)
+
+    Some(fgp)
 }
 
 /// setup_past_independence()
@@ -1824,7 +1964,7 @@ pub fn parse_frame_header<R: io::Read>(
     }
     fh.reduced_tx_set = br.f::<bool>(1)?; // f(1)
     fh.global_motion_params = parse_global_motion_params(&mut br, &fh)?; // global_motion_params()
-    parse_film_grain_params(&mut br, sh, &fh)?; // film_grain_params()
+    fh.film_grain_params = parse_film_grain_params(&mut br, sh, &fh)?; // film_grain_params()
 
     Some(fh)
 }
