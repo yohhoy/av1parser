@@ -37,6 +37,7 @@ Supported OBU types:
 - OBU_FRAME_HEADER
 - OBU_FRAME (header part only)
 - OBU_TILE_LIST
+- OBU_METADATA
 
 
 ## License
