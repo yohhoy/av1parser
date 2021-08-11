@@ -15,7 +15,7 @@ This project is not intended to decode video frames.
 ## Usage (Example)
 Run with maximum verbose output:
 ```
-$ cargo run stream/parkjoy.webm -vvv
+$ cargo run streams/parkjoy.webm -vvv
 ...
 ```
 

@@ -247,7 +247,7 @@ fn parse_obu_bitstream<R: io::Read + io::Seek>(
     println!("{}: Raw stream", fname);
 
     let mut seq = av1::Sequence::new();
-    let sz = u32::max_value();
+    let sz = u32::MAX;
     let mut fnum = 0;
 
     // parse OBU(open bitstream unit)s sequence
@@ -272,7 +272,7 @@ fn process_file(fname: &str, config: &AppConfig) -> io::Result<()> {
     let f = fs::OpenOptions::new().read(true).open(fname)?;
     let mut reader = io::BufReader::new(f);
 
-    // probe media containter format
+    // probe media container format
     let fmt = probe_fileformat(&mut reader)?;
     reader.seek(SeekFrom::Start(0))?;
 

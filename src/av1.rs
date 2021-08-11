@@ -33,7 +33,7 @@ impl Sequence {
 }
 
 ///
-/// Referenfe frame manager
+/// Reference frame manager
 ///
 #[derive(Debug)]
 pub struct RefFrameManager {
