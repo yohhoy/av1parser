@@ -111,6 +111,15 @@ fn process_obu<R: io::Read>(
                 println!("  invalid TileList")
             }
         }
+        obu::OBU_METADATA => {
+            if let Ok(metadata) = obu::parse_metadata_obu(reader) {
+                if config.verbose > 1 {
+                    println!("    {:?}", metadata);
+                }
+            } else {
+                println!("    invalid MetadataObu");
+            }
+        }
         _ => {}
     }
 }
