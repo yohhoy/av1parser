@@ -1,5 +1,5 @@
 # av1parser
-[![Build Status](https://travis-ci.org/yohhoy/av1parser.svg?branch=master)](https://travis-ci.org/yohhoy/av1parser)
+[![Build Status](https://github.com/yohhoy/av1parser/actions/workflows/rust.yml/badge.svg)](https://github.com/yohhoy/av1parser/actions/workflows/rust.yml)
 [![MIT License](http://img.shields.io/badge/license-MIT-blue.svg?style=flat)](LICENSE)
 
 [AOM(Alliance of Open Media)][aom]'s [AV1 video codec bitstream][av1-spec] parser.
