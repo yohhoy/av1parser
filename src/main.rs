@@ -171,7 +171,7 @@ fn parse_ivf_format<R: io::Read + io::Seek>(
             println!("IVF F#{} size={}", frame.pts, frame.size);
         }
         let mut sz = frame.size;
-        let pos = reader.seek(SeekFrom::Current(0))?;
+        let pos = reader.stream_position()?;
         // parse OBU(open bitstream unit)s
         while sz > 0 {
             let obu = obu::parse_obu_header(&mut reader, sz)?;
@@ -179,7 +179,7 @@ fn parse_ivf_format<R: io::Read + io::Seek>(
                 println!("  {}", obu);
             }
             sz -= obu.header_len + obu.obu_size;
-            let pos = reader.seek(SeekFrom::Current(0))?;
+            let pos = reader.stream_position()?;
             process_obu(&mut reader, &mut seq, &obu, config);
             reader.seek(SeekFrom::Start(pos + obu.obu_size as u64))?;
         }
@@ -239,7 +239,7 @@ fn parse_webm_format<R: io::Read + io::Seek>(
                 println!("  {}", obu);
             }
             sz -= obu.header_len + obu.obu_size;
-            let pos = reader.seek(SeekFrom::Current(0))?;
+            let pos = reader.stream_position()?;
             process_obu(&mut reader, &mut seq, &obu, config);
             reader.seek(SeekFrom::Start(pos + obu.obu_size as u64))?;
         }
@@ -338,7 +338,7 @@ fn parse_obu_bitstream<R: io::Read + io::Seek>(
             }
             println!("  {}", obu);
         }
-        let pos = reader.seek(SeekFrom::Current(0))?;
+        let pos = reader.stream_position()?;
         process_obu(&mut reader, &mut seq, &obu, config);
         reader.seek(SeekFrom::Start(pos + obu.obu_size as u64))?;
     }

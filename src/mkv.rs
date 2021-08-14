@@ -172,7 +172,7 @@ impl Matroska {
             let node_size = (node_size - (len as i64) - 3) as u64;
             let flags = buf[2];
 
-            self.curr_offset = reader.seek(SeekFrom::Current(0))? + node_size;
+            self.curr_offset = reader.stream_position()? + node_size;
             return Ok(Some(Block {
                 track_num: track_num as u64,
                 timecode: self.clusters[self.curr_cluster].timecode + (tc_offset as i64),
@@ -226,7 +226,7 @@ impl Matroska {
 
     // Track element
     fn read_track<R: io::Read + io::Seek>(&mut self, mut reader: R) -> io::Result<()> {
-        let mut pos = reader.seek(SeekFrom::Current(0))?;
+        let mut pos = reader.stream_position()?;
         // TrackEntry nodes
         while let Ok(entry) = read_elementid(&mut reader) {
             if entry != ELEMENT_TRACKENTRY {
@@ -242,7 +242,7 @@ impl Matroska {
             let entry_body = io::Cursor::new(entry_body);
             self.tracks.push(Self::read_trackentry(entry_body)?);
 
-            pos = reader.seek(SeekFrom::Current(0))?;
+            pos = reader.stream_position()?;
         }
         Ok(())
     }
@@ -279,7 +279,7 @@ impl Matroska {
                 }
             }
 
-            pos = reader.seek(SeekFrom::Current(0))?;
+            pos = reader.stream_position()?;
             if limit_pos <= pos {
                 break;
             }
