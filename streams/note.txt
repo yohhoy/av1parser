@@ -5,3 +5,6 @@
 ./aomenc --cpu-used=2 --error-resilient=1 park_joy_90p_8_420.y4m -o parkjoy_error-resilient.ivf
 
 AOM_TEST_PRESERVE_OUTPUT=yes aom/test/examples.sh --bin-path examples
+
+ffmpeg -i parkjoy.webm -vcodec copy parkjoy.mp4
+ffmpeg -i parkjoy.mp4 -f lavfi -i anullsrc -vcodec copy -shortest parkjoy-audio.mp4

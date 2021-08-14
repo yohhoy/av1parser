@@ -27,9 +27,11 @@ Supported file formats:
 - Raw bitstream (Low overhead bitstream format)
 - [IVF format][ivf]
 - [WebM format][webm] ("V_AV1" codec)
+- [MP4 format][isobmff] ("av01" codec)
 
 [ivf]: https://wiki.multimedia.cx/index.php/IVF
 [webm]: https://www.webmproject.org/
+[isobmff]: https://en.wikipedia.org/wiki/ISO/IEC_base_media_file_format
 
 Supported OBU types:
 - OBU_SEQUENCE_HEADER

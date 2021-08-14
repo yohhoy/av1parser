@@ -6,6 +6,7 @@ extern crate hex;
 
 use av1parser::*;
 use clap::{App, Arg};
+use std::cmp;
 use std::fs;
 use std::io;
 use std::io::{Seek, SeekFrom};
@@ -14,6 +15,7 @@ mod av1;
 mod bitio;
 mod ivf;
 mod mkv;
+mod mp4;
 mod obu;
 
 /// application global config
@@ -247,6 +249,74 @@ fn parse_webm_format<R: io::Read + io::Seek>(
     Ok(())
 }
 
+/// parse MP4(ISOBMFF) format
+fn parse_mp4_format<R: io::Read + io::Seek>(
+    mut reader: R,
+    fname: &str,
+    config: &AppConfig,
+) -> io::Result<()> {
+    // open MP4(ISOBMFF) file
+    let mp4 = mp4::open_mp4file(&mut reader)?;
+    if config.verbose > 1 {
+        println!("  {:?}", mp4.get_filetype());
+    }
+
+    let brand_av01 = mp4::FCC::from(mp4::BRAND_AV01);
+    let brands = &mp4.get_filetype().compatible_brands;
+    if brands.iter().find(|&b| *b == brand_av01).is_none() {
+        println!("{}: ISOBMFF/MP4 {} brand not found", fname, brand_av01);
+        return Ok(());
+    }
+    let (av1se, av1cc) = match mp4.get_av1config() {
+        Some(config) => config,
+        None => {
+            println!("{}: ISOBMFF/MP4 {} track not found", fname, brand_av01);
+            return Ok(());
+        }
+    };
+    println!(
+        "{}: ISOBMFF/MP4 codec={} size={}x{}",
+        fname, brand_av01, av1se.width, av1se.height
+    );
+    if config.verbose > 1 {
+        println!("  {:?}", av1se);
+        println!("  {:?}", av1cc);
+    }
+
+    let mut seq = av1::Sequence::new();
+
+    // process AV1CodecConfigurationBox::configOBUs
+    let mut cur = io::Cursor::new(av1cc.config_obus.clone());
+    let mut config_sz = av1cc.config_obus.len() as u32;
+    while config_sz > 0 {
+        let obu = obu::parse_obu_header(&mut cur, config_sz)?;
+        if config.verbose > 0 {
+            println!("  {}", obu);
+        }
+        config_sz -= obu.header_len + obu.obu_size;
+        process_obu(&mut cur, &mut seq, &obu, config);
+    }
+
+    // parse AV1 Samples
+    for sample in mp4.get_samples() {
+        reader.seek(SeekFrom::Start(sample.pos))?;
+        let mut sz = sample.size;
+        // parse OBU(open bitstream unit)s
+        while sz > 0 {
+            let obu_size = cmp::min(sz, u32::MAX as u64) as u32;
+            let obu = obu::parse_obu_header(&mut reader, obu_size)?;
+            if config.verbose > 0 {
+                println!("  {}", obu);
+            }
+            sz -= (obu.header_len + obu.obu_size) as u64;
+            let pos = reader.stream_position()?;
+            process_obu(&mut reader, &mut seq, &obu, config);
+            reader.seek(SeekFrom::Start(pos + obu.obu_size as u64))?;
+        }
+    }
+    Ok(())
+}
+
 /// parse low overhead bitstream format
 fn parse_obu_bitstream<R: io::Read + io::Seek>(
     mut reader: R,
@@ -288,6 +358,7 @@ fn process_file(fname: &str, config: &AppConfig) -> io::Result<()> {
     match fmt {
         FileFormat::IVF => parse_ivf_format(reader, fname, config)?,
         FileFormat::WebM => parse_webm_format(reader, fname, config)?,
+        FileFormat::MP4 => parse_mp4_format(reader, fname, config)?,
         FileFormat::Bitstream => parse_obu_bitstream(reader, fname, config)?,
     };
     Ok(())
