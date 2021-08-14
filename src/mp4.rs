@@ -337,7 +337,7 @@ fn parse_track<R: io::Read + io::Seek>(
 ) -> io::Result<bool> {
     let limit = reader.stream_position()? + size;
     let mut av1config = None;
-    let (mut stcs, mut stsz, mut stco) = (Vec::new(), Vec::new(), Vec::new());
+    let (mut stsc, mut stsz, mut stco) = (Vec::new(), Vec::new(), Vec::new());
     loop {
         // read next Box
         let (boxtype, size) = match read_box(&mut reader) {
@@ -357,7 +357,7 @@ fn parse_track<R: io::Read + io::Seek>(
             av1config = parse_sampledescription(&mut reader)?;
         } else if boxtype == BOX_SAMPLETOCHUNK {
             // parse SampleToChunkBox
-            stcs = parse_sampletochunk(&mut reader)?;
+            stsc = parse_sampletochunk(&mut reader)?;
         } else if boxtype == BOX_SAMPLESIZE {
             // parse SampleSizeBox
             stsz = parse_samplesize(&mut reader)?;
@@ -377,24 +377,22 @@ fn parse_track<R: io::Read + io::Seek>(
     }
     mp4.av1config = av1config;
 
-    // calculate Sample{pos,size} from stcs/stsz/stco
+    // calculate Sample{pos,size} from stsc/stsz/stco
     let nsample = stsz.len();
     let mut samples = Vec::with_capacity(nsample);
-    let (mut stcs_idx, mut stsz_idx, mut stco_idx) = (0, 0, 0);
-    stcs.push((nsample as u32, 0)); // add sentinel
-    let mut nsample_in_chunk = stcs[stcs_idx].1;
+    let (mut stsc_idx, mut stsz_idx, mut stco_idx) = (0, 0, 0);
+    stsc.push((nsample as u32, 0)); // add sentinel
     while stsz_idx < nsample {
         let mut pos = stco[stco_idx];
-        for _ in 0..nsample_in_chunk {
+        for _ in 0..(stsc[stsc_idx].1) {
             let size = stsz[stsz_idx] as u64;
             samples.push(Sample { pos, size });
             pos += size;
             stsz_idx += 1;
         }
         stco_idx += 1;
-        if stsz_idx + 1 >= stcs[stcs_idx + 1].0 as usize {
-            stcs_idx += 1;
-            nsample_in_chunk = stcs[stcs_idx].1;
+        if stsz_idx + 1 >= stsc[stsc_idx + 1].0 as usize {
+            stsc_idx += 1;
         }
     }
     mp4.samples = samples;
