@@ -1,8 +1,8 @@
 #![allow(dead_code)]
-use byteorder::{BigEndian, ByteOrder};
 ///
 /// https://matroska.org/technical/specs/index.html
 ///
+use byteorder::{BigEndian, ByteOrder};
 use std::io;
 use std::io::{Read, SeekFrom};
 
@@ -71,7 +71,13 @@ fn read_varint<R: io::Read>(mut reader: R) -> io::Result<(i64, usize)> {
     value &= (1 << (7 - lzcnt)) - 1;
     if lzcnt > 0 {
         let mut buf = [0; 7];
-        reader.take(lzcnt as u64).read(&mut buf)?;
+        let rlen = reader.take(lzcnt as u64).read(&mut buf)?;
+        if rlen < lzcnt {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "Unexpected EOF at variable length codeded integer",
+            ));
+        }
         for i in 0..lzcnt {
             value = (value << 8) | buf[i] as i64;
         }
@@ -86,11 +92,17 @@ fn read_datasize<R: io::Read>(reader: R) -> io::Result<i64> {
     Ok(value)
 }
 
-/// Unsigned integer (1-8 bytes), return
+/// Unsigned integer (1-8 bytes)
 fn read_uint<R: io::Read>(reader: R, len: i64) -> io::Result<u64> {
     assert!(0 < len && len <= 8);
     let mut buf = [0; 8];
-    reader.take(len as u64).read(&mut buf)?;
+    let rlen = reader.take(len as u64).read(&mut buf)?;
+    if rlen < len as usize {
+        return Err(io::Error::new(
+            io::ErrorKind::UnexpectedEof,
+            "Unexpected EOF at unsigned integer",
+        ));
+    }
     let mut value = buf[0] as u64;
     for i in 1..(len as usize) {
         value = value << 8 | buf[i] as u64;
@@ -185,7 +197,7 @@ impl Matroska {
 
     // TrackEntry element
     fn read_trackentry<R: io::Read + io::Seek>(mut reader: R) -> io::Result<TrackEntey> {
-        let mut entry = TrackEntey::new();
+        let mut entry = TrackEntey::default();
         while let Ok(node) = read_elementid(&mut reader) {
             let node_size = read_datasize(&mut reader)?;
             match node {
@@ -210,7 +222,7 @@ impl Matroska {
 
     // Video element
     fn read_videoentry<R: io::Read + io::Seek>(mut reader: R) -> io::Result<VideoTrack> {
-        let mut video = VideoTrack::new();
+        let mut video = VideoTrack::default();
         while let Ok(node) = read_elementid(&mut reader) {
             let node_size = read_datasize(&mut reader)?;
             match node {
@@ -253,11 +265,13 @@ impl Matroska {
         mut reader: R,
         node_size: i64,
     ) -> io::Result<()> {
-        let mut pos = reader.seek(SeekFrom::Current(0))?;
+        let mut pos = reader.stream_position()?;
         let limit_pos = pos + node_size as u64;
 
-        let mut cluster = Cluster::new();
-        cluster.pos_end = limit_pos;
+        let mut cluster = Cluster {
+            pos_end: limit_pos,
+            ..Default::default()
+        };
         let mut first_block = true;
 
         // Level2 elements
@@ -292,7 +306,7 @@ impl Matroska {
 ///
 /// Matroska/TrackEntry
 ///
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct TrackEntey {
     track_num: u64,
     track_type: u64,
@@ -300,53 +314,23 @@ struct TrackEntey {
     setting: Option<VideoTrack>,
 }
 
-impl TrackEntey {
-    fn new() -> Self {
-        TrackEntey {
-            track_num: 0,
-            track_type: 0,
-            codec_id: "".into(),
-            setting: None,
-        }
-    }
-}
-
 ///
 /// Matroska/TrackEntry/Video settings
 ///
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct VideoTrack {
     pub pixel_width: u64,  // PixelWidth
     pub pixel_height: u64, // PixelHeight
 }
 
-impl VideoTrack {
-    fn new() -> Self {
-        VideoTrack {
-            pixel_width: 0,
-            pixel_height: 0,
-        }
-    }
-}
-
 ///
 /// Matroska/Cluster
 ///
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Cluster {
     timecode: i64,
     pos_begin: u64,
     pos_end: u64,
-}
-
-impl Cluster {
-    fn new() -> Self {
-        Cluster {
-            timecode: 0,
-            pos_begin: 0,
-            pos_end: 0,
-        }
-    }
 }
 
 ///
