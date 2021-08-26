@@ -361,7 +361,7 @@ fn parse_track<R: io::Read + io::Seek>(
         } else if boxtype == BOX_SAMPLESIZE {
             // parse SampleSizeBox
             stsz = parse_samplesize(&mut reader)?;
-        } else if boxtype == BOX_CHUNKOFFSET {
+        } else if boxtype == BOX_CHUNKOFFSET || boxtype == BOX_CHUNKOFFSET64 {
             // parse ChunkOffsetBox/ChunkLargeOffsetBox
             stco = parse_chunkoffset(&mut reader, boxtype)?;
         } else {
