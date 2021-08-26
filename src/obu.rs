@@ -415,53 +415,53 @@ pub struct TileListEntry {
 /// Film grain synthesis parameters
 #[derive(Debug, Default)]
 pub struct FilmGrainParams {
-    pub apply_grain: bool,             // f(1)
-    pub grain_seed: u16,               // f(16)
-    pub update_grain: bool,            // f(1)
-    pub film_grain_params_ref_idx: u8, // f(3)
-    pub num_y_points: u8,              // f(4)
-    pub point_y_value: Vec<u8>,
-    pub point_y_scaling: Vec<u8>,
+    pub apply_grain: bool,              // f(1)
+    pub grain_seed: u16,                // f(16)
+    pub update_grain: bool,             // f(1)
+    pub film_grain_params_ref_idx: u8,  // f(3)
+    pub num_y_points: u8,               // f(4)
+    pub point_y_value: Vec<u8>,         // f(8)
+    pub point_y_scaling: Vec<u8>,       // f(8)
     pub chroma_scaling_from_luma: bool, // f(1)
     pub num_cb_points: u8,              // f(4)
-    pub point_cb_value: Vec<u8>,
-    pub point_cb_scaling: Vec<u8>,
-    pub num_cr_points: u8, // f(4)
-    pub point_cr_value: Vec<u8>,
-    pub point_cr_scaling: Vec<u8>,
-    pub grain_scaling_minus_8: u8, // f(2)
-    pub ar_coeff_lag: u8,          // f(2)
-    pub ar_coeffs_y_plus_128: Vec<u8>,
-    pub ar_coeffs_cb_plus_128: Vec<u8>,
-    pub ar_coeffs_cr_plus_128: Vec<u8>,
+    pub point_cb_value: Vec<u8>,        // f(8)
+    pub point_cb_scaling: Vec<u8>,      // f(8)
+    pub num_cr_points: u8,              // f(4)
+    pub point_cr_value: Vec<u8>,        // f(8)
+    pub point_cr_scaling: Vec<u8>,      // f(8)
+    pub grain_scaling_minus_8: u8,      // f(2)
+    pub ar_coeff_lag: u8,               // f(2)
+    pub ar_coeffs_y_plus_128: Vec<u8>,  // f(8)
+    pub ar_coeffs_cb_plus_128: Vec<u8>, // f(8)
+    pub ar_coeffs_cr_plus_128: Vec<u8>, // f(8)
     pub ar_coeff_shift_minus_6: u8,     // f(2)
     pub grain_scale_shift: u8,          // f(2)
     pub cb_mult: u8,                    // f(8)
     pub cb_luma_mult: u8,               // f(8)
-    pub cb_offset: u8,                  // f(9)
+    pub cb_offset: u16,                 // f(9)
     pub cr_mult: u8,                    // f(8)
     pub cr_luma_mult: u8,               // f(8)
-    pub cr_offset: u8,                  // f(9)
+    pub cr_offset: u16,                 // f(9)
     pub overlap_flag: bool,             // f(1)
     pub clip_to_restricted_range: bool, // f(1)
 }
 
 #[derive(Debug, Default)]
 pub struct ScalabilityStructure {
-    pub spatial_layers_cnt_minus_1: u8,                             // f(2)
-    pub spatial_layer_dimensions_present_flag: bool,                // f(1)
-    pub spatial_layer_description_present_flag: bool,               // f(1)
-    pub temporal_group_description_present_flag: bool,              // f(1)
-    pub scalability_structure_reserved_3bits: u8,                   // f(3)
-    pub spatial_layer_max_width: Vec<u16>,
-    pub spatial_layer_max_height: Vec<u16>,
-    pub spatial_layer_ref_id: Vec<u8>,
-    pub temporal_group_size: u8,                                    // f(8)
-    pub temporal_group_temporal_id: Vec<u8>,                        // f(3)
-    pub temporal_group_temporal_switching_up_point_flag: Vec<bool>,
-    pub temporal_group_spatial_switching_up_point_flag: Vec<bool>,
-    pub temporal_group_ref_cnt: Vec<u8>,
-    pub temporal_group_ref_pic_diff: Vec<Vec<u8>>,
+    pub spatial_layers_cnt_minus_1: u8,                // f(2)
+    pub spatial_layer_dimensions_present_flag: bool,   // f(1)
+    pub spatial_layer_description_present_flag: bool,  // f(1)
+    pub temporal_group_description_present_flag: bool, // f(1)
+    pub scalability_structure_reserved_3bits: u8,      // f(3)
+    pub spatial_layer_max_width: Vec<u16>,             // f(16)
+    pub spatial_layer_max_height: Vec<u16>,            // f(16)
+    pub spatial_layer_ref_id: Vec<u8>,                 // f(8)
+    pub temporal_group_size: u8,                       // f(8)
+    pub temporal_group_temporal_id: Vec<u8>,           // f(3)
+    pub temporal_group_temporal_switching_up_point_flag: Vec<bool>, // f(1)
+    pub temporal_group_spatial_switching_up_point_flag: Vec<bool>, // f(1)
+    pub temporal_group_ref_cnt: Vec<u8>,               // f(3)
+    pub temporal_group_ref_pic_diff: Vec<Vec<u8>>,     // f(8)
 }
 
 // Metadata OBU structs
@@ -476,18 +476,18 @@ pub enum MetadataObu {
 
 #[derive(Debug, Default)]
 pub struct HdrCllMetadata {
-    pub max_cll: u16,   // f(16)
-    pub max_fall: u16,  // f(16)
+    pub max_cll: u16,  // f(16)
+    pub max_fall: u16, // f(16)
 }
 
 #[derive(Debug, Default)]
 pub struct HdrMdcvMetadata {
     pub primary_chromaticity_x: [u16; 3],
     pub primary_chromaticity_y: [u16; 3],
-    pub white_point_chromaticity_x: u16,    // f(16)
-    pub white_point_chromaticity_y: u16,    // f(16)
-    pub luminance_max: u32,                 // f(32)
-    pub luminance_min: u32,                 // f(32)
+    pub white_point_chromaticity_x: u16, // f(16)
+    pub white_point_chromaticity_y: u16, // f(16)
+    pub luminance_max: u32,              // f(32)
+    pub luminance_min: u32,              // f(32)
 }
 
 #[derive(Debug, Default)]
@@ -498,26 +498,26 @@ pub struct ScalabilityMetadata {
 
 #[derive(Debug, Default)]
 pub struct ItutT35Metadata {
-    pub itu_t_t35_country_code: u8,                         // f(8)
-    pub itu_t_t35_country_code_extension_byte: Option<u8>,  // f(8)
+    pub itu_t_t35_country_code: u8,                        // f(8)
+    pub itu_t_t35_country_code_extension_byte: Option<u8>, // f(8)
     pub itu_t_t35_payload_bytes: Vec<u8>,
 }
 
 #[derive(Debug, Default)]
 pub struct TimecodeMetadata {
-    pub counting_type: u8,          // f(5)
-    pub full_timestamp_flag: bool,  // f(1)
-    pub discontinuity_flag: bool,   // f(1)
-    pub cnt_dropped_flag: bool,     // f(1)
-    pub n_frames: u16,              // f(9)
-    pub seconds_value: u8,          // f(6)
-    pub minutes_value: u8,          // f(6)
-    pub hours_value: u8,            // f(5)
-    pub seconds_flag: bool,         // f(1)
-    pub minutes_flag: bool,         // f(1)
-    pub hours_flag: bool,           // f(1)
-    pub time_offset_length: u8,     // f(5)
-    pub time_offset_value: u32,     // f(time_offset_length), 5 bits <= 31
+    pub counting_type: u8,         // f(5)
+    pub full_timestamp_flag: bool, // f(1)
+    pub discontinuity_flag: bool,  // f(1)
+    pub cnt_dropped_flag: bool,    // f(1)
+    pub n_frames: u16,             // f(9)
+    pub seconds_value: u8,         // f(6)
+    pub minutes_value: u8,         // f(6)
+    pub hours_value: u8,           // f(5)
+    pub seconds_flag: bool,        // f(1)
+    pub minutes_flag: bool,        // f(1)
+    pub hours_flag: bool,          // f(1)
+    pub time_offset_length: u8,    // f(5)
+    pub time_offset_value: u32,    // f(time_offset_length), 5 bits <= 31
 }
 
 /// return (MiCols, MiRows)
@@ -542,7 +542,7 @@ fn leb128<R: io::Read>(bs: &mut R) -> io::Result<(u32, u32)> {
             break;
         }
     }
-    assert!(value <= (1u64 << 32) - 1);
+    assert!(value < (1u64 << 32));
     Ok((leb128bytes, value as u32))
 }
 
@@ -1479,8 +1479,8 @@ fn parse_film_grain_params<R: io::Read>(
         fgp.point_y_scaling.push(br.f::<u8>(8)?); // f(8)
     }
 
-    let color_config = sh.color_config;
-    fgp.chroma_scaling_from_luma = if color_config.mono_chrome {
+    let cc = sh.color_config;
+    fgp.chroma_scaling_from_luma = if cc.mono_chrome {
         false // 0
     } else {
         br.f::<bool>(1)? // f(1)
@@ -1488,9 +1488,7 @@ fn parse_film_grain_params<R: io::Read>(
 
     if sh.color_config.mono_chrome
         || fgp.chroma_scaling_from_luma
-        || (color_config.subsampling_x == 1
-            && color_config.subsampling_y == 1
-            && fgp.num_y_points == 0)
+        || (cc.subsampling_x == 1 && cc.subsampling_y == 1 && fgp.num_y_points == 0)
     {
         fgp.num_cb_points = 0;
         fgp.num_cr_points = 0;
@@ -1546,13 +1544,13 @@ fn parse_film_grain_params<R: io::Read>(
     if fgp.num_cb_points != 0 {
         fgp.cb_mult = br.f::<u8>(8)?; // f(8)
         fgp.cb_luma_mult = br.f::<u8>(8)?; // f(8)
-        fgp.cb_offset = br.f::<u8>(9)?; // f(9)
+        fgp.cb_offset = br.f::<u16>(9)?; // f(9)
     }
 
     if fgp.num_cr_points != 0 {
         fgp.cr_mult = br.f::<u8>(8)?; // f(8)
         fgp.cr_luma_mult = br.f::<u8>(8)?; // f(8)
-        fgp.cr_offset = br.f::<u8>(9)?; // f(9)
+        fgp.cr_offset = br.f::<u16>(9)?; // f(9)
     }
 
     fgp.overlap_flag = br.f::<bool>(1)?; // f(1)
@@ -1640,15 +1638,15 @@ pub fn parse_obu_header<R: io::Read>(bs: &mut R, sz: u32) -> io::Result<Obu> {
         ));
     }
 
-    return Ok(Obu {
-        obu_type: obu_type,
+    Ok(Obu {
+        obu_type,
         obu_extension_flag: obu_extension_flag == 1,
         obu_has_size_field: obu_has_size_field == 1,
-        temporal_id: temporal_id,
-        spatial_id: spatial_id,
-        obu_size: obu_size,
+        temporal_id,
+        spatial_id,
+        obu_size,
         header_len: obu_header_len + obu_size_len,
-    });
+    })
 }
 
 ///
@@ -2085,6 +2083,9 @@ fn parse_tile_list_entry<R: io::Read>(br: &mut BitReader<R>) -> Option<TileListE
     Some(tle)
 }
 
+///
+/// parse metadata_obu()
+///
 pub fn parse_metadata_obu<R: io::Read>(bs: &mut R) -> io::Result<MetadataObu> {
     let (_metadata_type_len, metadata_type) = leb128(bs)?;
     let mut br = BitReader::new(bs);
@@ -2108,36 +2109,44 @@ pub fn parse_metadata_obu<R: io::Read>(bs: &mut R) -> io::Result<MetadataObu> {
     }
 }
 
+///
+/// parse metadata_hdr_cll()
+///
 fn parse_hdr_cll_metadata<R: io::Read>(br: &mut BitReader<R>) -> Option<MetadataObu> {
     let mut meta = HdrCllMetadata::default();
 
-    meta.max_cll = br.f::<u16>(16)?;
-    meta.max_fall = br.f::<u16>(16)?;
+    meta.max_cll = br.f::<u16>(16)?; // f(16)
+    meta.max_fall = br.f::<u16>(16)?; // f(16)
 
     Some(MetadataObu::HdrCll(meta))
 }
 
+///
+/// parse metadata_hdr_mdcv()
+///
 fn parse_hdr_mdcv_metadata<R: io::Read>(br: &mut BitReader<R>) -> Option<MetadataObu> {
     let mut meta = HdrMdcvMetadata::default();
 
     for i in 0..3 {
-        meta.primary_chromaticity_x[i] = br.f::<u16>(16)?;
-        meta.primary_chromaticity_y[i] = br.f::<u16>(16)?;
+        meta.primary_chromaticity_x[i] = br.f::<u16>(16)?; // f(16)
+        meta.primary_chromaticity_y[i] = br.f::<u16>(16)?; // f(16)
     }
 
-    meta.white_point_chromaticity_x = br.f::<u16>(16)?;
-    meta.white_point_chromaticity_y = br.f::<u16>(16)?;
-    meta.luminance_max = br.f::<u32>(32)?;
-    meta.luminance_min = br.f::<u32>(32)?;
+    meta.white_point_chromaticity_x = br.f::<u16>(16)?; // f(16)
+    meta.white_point_chromaticity_y = br.f::<u16>(16)?; // f(16)
+    meta.luminance_max = br.f::<u32>(32)?; // f(32)
+    meta.luminance_min = br.f::<u32>(32)?; // f(32)
 
     Some(MetadataObu::HdrMdcv(meta))
 }
 
+///
+/// parse metadata_scalability()
+///
 fn parse_scalability_metadata<R: io::Read>(br: &mut BitReader<R>) -> Option<MetadataObu> {
     let mut meta = ScalabilityMetadata::default();
 
-    meta.scalability_mode_idc = br.f::<u8>(8)?;
-
+    meta.scalability_mode_idc = br.f::<u8>(8)?; // f(8)
     if meta.scalability_mode_idc == SCALABILITY_SS {
         meta.scalability_structure = parse_scalability_structure(br);
     }
@@ -2145,39 +2154,44 @@ fn parse_scalability_metadata<R: io::Read>(br: &mut BitReader<R>) -> Option<Meta
     Some(MetadataObu::Scalability(meta))
 }
 
+///
+/// parse scalability_structure()
+///
 fn parse_scalability_structure<R: io::Read>(br: &mut BitReader<R>) -> Option<ScalabilityStructure> {
     let mut ss = ScalabilityStructure::default();
 
-    ss.spatial_layers_cnt_minus_1 = br.f::<u8>(2)?;
-    ss.spatial_layer_dimensions_present_flag = br.f::<bool>(1)?;
-    ss.spatial_layer_description_present_flag  = br.f::<bool>(1)?;
-    ss.temporal_group_description_present_flag = br.f::<bool>(1)?;
-    ss.scalability_structure_reserved_3bits = br.f::<u8>(3)?;
+    ss.spatial_layers_cnt_minus_1 = br.f::<u8>(2)?; // f(2)
+    ss.spatial_layer_dimensions_present_flag = br.f::<bool>(1)?; // f(1)
+    ss.spatial_layer_description_present_flag = br.f::<bool>(1)?; // f(1)
+    ss.temporal_group_description_present_flag = br.f::<bool>(1)?; // f(1)
+    ss.scalability_structure_reserved_3bits = br.f::<u8>(3)?; // f(3)
 
     if ss.spatial_layer_dimensions_present_flag {
         for _ in 0..=ss.spatial_layers_cnt_minus_1 {
-            ss.spatial_layer_max_width.push(br.f::<u16>(16)?);
-            ss.spatial_layer_max_height.push(br.f::<u16>(16)?);
+            ss.spatial_layer_max_width.push(br.f::<u16>(16)?); // f(16)
+            ss.spatial_layer_max_height.push(br.f::<u16>(16)?); // f(16)
         }
     }
 
     if ss.spatial_layer_description_present_flag {
         for _ in 0..=ss.spatial_layers_cnt_minus_1 {
-            ss.spatial_layer_ref_id.push(br.f::<u8>(8)?);
+            ss.spatial_layer_ref_id.push(br.f::<u8>(8)?); // f(8)
         }
     }
 
     if ss.temporal_group_description_present_flag {
-        ss.temporal_group_size = br.f::<u8>(8)?;
+        ss.temporal_group_size = br.f::<u8>(8)?; // f(8)
 
         for i in 0..ss.temporal_group_size as usize {
-            ss.temporal_group_temporal_id.push(br.f::<u8>(3)?);
-            ss.temporal_group_temporal_switching_up_point_flag.push(br.f::<bool>(1)?);
-            ss.temporal_group_spatial_switching_up_point_flag.push(br.f::<bool>(1)?);
-            ss.temporal_group_ref_cnt.push(br.f::<u8>(3)?);
-            
+            ss.temporal_group_temporal_id.push(br.f::<u8>(3)?); // f(3)
+            ss.temporal_group_temporal_switching_up_point_flag
+                .push(br.f::<bool>(1)?); // f(1)
+            ss.temporal_group_spatial_switching_up_point_flag
+                .push(br.f::<bool>(1)?); // f(1)
+            ss.temporal_group_ref_cnt.push(br.f::<u8>(3)?); // f(3)
+
             for _ in 0..ss.temporal_group_ref_cnt[i] {
-                ss.temporal_group_ref_pic_diff[i].push(br.f::<u8>(8)?);
+                ss.temporal_group_ref_pic_diff[i].push(br.f::<u8>(8)?); // f(8)
             }
         }
     }
@@ -2185,13 +2199,16 @@ fn parse_scalability_structure<R: io::Read>(br: &mut BitReader<R>) -> Option<Sca
     Some(ss)
 }
 
+///
+/// parse metadata_itut_t35()
+///
 fn parse_itu_t_t35_metadata<R: io::Read>(br: &mut BitReader<R>) -> Option<MetadataObu> {
     let mut meta = ItutT35Metadata::default();
 
-    meta.itu_t_t35_country_code = br.f::<u8>(8)?;
+    meta.itu_t_t35_country_code = br.f::<u8>(8)?; // f(8)
 
     meta.itu_t_t35_country_code_extension_byte = if meta.itu_t_t35_country_code == 0xFF {
-        br.f::<u8>(8)
+        br.f::<u8>(8) // f(8)
     } else {
         None
     };
@@ -2199,45 +2216,49 @@ fn parse_itu_t_t35_metadata<R: io::Read>(br: &mut BitReader<R>) -> Option<Metada
     while let Some(byte) = br.f::<u8>(8) {
         meta.itu_t_t35_payload_bytes.push(byte);
     }
-    
+
     Some(MetadataObu::ItutT35(meta))
 }
 
+///
+/// parse metadata_timecode()
+///
 fn parse_timecode_metadata<R: io::Read>(br: &mut BitReader<R>) -> Option<MetadataObu> {
     let mut meta = TimecodeMetadata::default();
 
-    meta.counting_type = br.f::<u8>(5)?;
-    meta.full_timestamp_flag = br.f::<bool>(1)?;
-    meta.discontinuity_flag = br.f::<bool>(1)?;
-    meta.cnt_dropped_flag = br.f::<bool>(1)?;
-    meta.n_frames = br.f::<u16>(9)?;
+    meta.counting_type = br.f::<u8>(5)?; // f(5)
+    meta.full_timestamp_flag = br.f::<bool>(1)?; // f(1)
+    meta.discontinuity_flag = br.f::<bool>(1)?; // f(1)
+    meta.cnt_dropped_flag = br.f::<bool>(1)?; // f(1)
+    meta.n_frames = br.f::<u16>(9)?; // f(9)
 
     if meta.full_timestamp_flag {
-        meta.seconds_value = br.f::<u8>(6)?;
-        meta.minutes_value = br.f::<u8>(6)?;
-        meta.hours_value = br.f::<u8>(5)?;
+        meta.seconds_value = br.f::<u8>(6)?; // f(6)
+        meta.minutes_value = br.f::<u8>(6)?; // f(6)
+        meta.hours_value = br.f::<u8>(5)?; // f(5)
     } else {
-        meta.seconds_flag = br.f::<bool>(1)?;
+        meta.seconds_flag = br.f::<bool>(1)?; // f(1)
 
         if meta.seconds_flag {
-            meta.seconds_value = br.f::<u8>(6)?;
-            meta.minutes_flag = br.f::<bool>(1)?;
+            meta.seconds_value = br.f::<u8>(6)?; // f(6)
+            meta.minutes_flag = br.f::<bool>(1)?; // f(1)
 
             if meta.minutes_flag {
-                meta.minutes_value = br.f::<u8>(6)?;
-                meta.hours_flag = br.f::<bool>(1)?;
+                meta.minutes_value = br.f::<u8>(6)?; // f(6)
+                meta.hours_flag = br.f::<bool>(1)?; // f(1)
 
                 if meta.hours_flag {
-                    meta.hours_value = br.f::<u8>(5)?;
+                    meta.hours_value = br.f::<u8>(5)?; // f(5)
                 }
             }
         }
     }
 
-    meta.time_offset_length = br.f::<u8>(5)?;
+    meta.time_offset_length = br.f::<u8>(5)?; // f(5)
 
     if meta.time_offset_length > 0 {
         meta.time_offset_value = br.f::<u32>(meta.time_offset_length as usize)?;
+        // f(time_offset_length)
     }
 
     Some(MetadataObu::Timecode(meta))
