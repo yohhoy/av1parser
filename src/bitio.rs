@@ -39,7 +39,7 @@ pub struct BitReader<R> {
 impl<R: io::Read> BitReader<R> {
     pub fn new(inner: R) -> BitReader<R> {
         BitReader {
-            inner: inner,
+            inner,
             bbuf: 0,
             bpos: 0,
         }
@@ -75,7 +75,7 @@ impl<R: io::Read> BitReader<R> {
         let mut value = self.f::<u32>(n)? as i32;
         let sign_mask = 1 << (n - 1);
         if value & sign_mask != 0 {
-            value = value - 2 * sign_mask
+            value -= 2 * sign_mask
         }
         Some(value)
     }
@@ -96,7 +96,7 @@ impl<R: io::Read> BitReader<R> {
     fn floor_log2(mut x: u32) -> u32 {
         let mut s = 0;
         while x != 0 {
-            x = x >> 1;
+            x >>= 1;
             s += 1;
         }
         s - 1

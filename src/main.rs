@@ -135,7 +135,7 @@ fn parse_ivf_format<R: io::Read + io::Seek>(
     // parse IVF header
     let mut ivf_header = [0; ivf::IVF_HEADER_SIZE];
     reader.read_exact(&mut ivf_header)?;
-    match ivf::parse_ivf_header(&mut ivf_header) {
+    match ivf::parse_ivf_header(&ivf_header) {
         Ok(hdr) => {
             let codec = String::from_utf8(hdr.codec.to_vec()).unwrap();
             println!(
@@ -263,7 +263,7 @@ fn parse_mp4_format<R: io::Read + io::Seek>(
 
     let brand_av01 = mp4::FCC::from(mp4::BRAND_AV01);
     let brands = &mp4.get_filetype().compatible_brands;
-    if brands.iter().find(|&b| *b == brand_av01).is_none() {
+    if !brands.iter().any(|b| *b == brand_av01) {
         println!("{}: ISOBMFF/MP4 {} brand not found", fname, brand_av01);
         return Ok(());
     }
