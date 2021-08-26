@@ -281,9 +281,9 @@ fn parse_sampledescription<R: io::Read + io::Seek>(
 
 /// parse SampleToChunkBox payload
 fn parse_sampletochunk<R: io::Read>(mut reader: R) -> io::Result<Vec<(u32, u32)>> {
-    let mut stcs = Vec::new();
     let _version_flag = read_u32(&mut reader)?;
     let entry_count = read_u32(&mut reader)?;
+    let mut stcs = Vec::with_capacity(entry_count as usize);
     for _ in 1..=entry_count {
         let first_chunk = read_u32(&mut reader)?;
         let samples_per_chunk = read_u32(&mut reader)?;
@@ -295,10 +295,10 @@ fn parse_sampletochunk<R: io::Read>(mut reader: R) -> io::Result<Vec<(u32, u32)>
 
 /// parse SampleSizeBox payload
 fn parse_samplesize<R: io::Read>(mut reader: R) -> io::Result<Vec<u32>> {
-    let mut sizes = Vec::new();
     let _version_flag = read_u32(&mut reader)?;
     let sample_size = read_u32(&mut reader)?;
     let sample_count = read_u32(&mut reader)?;
+    let mut sizes = Vec::with_capacity(sample_count as usize);
     if sample_size == 0 {
         for _ in 1..=sample_count {
             let entry_size = read_u32(&mut reader)?;
@@ -315,9 +315,9 @@ fn parse_samplesize<R: io::Read>(mut reader: R) -> io::Result<Vec<u32>> {
 /// parse ChunkOffsetBox/ChunkLargeOffsetBox payload
 fn parse_chunkoffset<R: io::Read>(mut reader: R, boxtype: FCC) -> io::Result<Vec<u64>> {
     assert!(boxtype == BOX_CHUNKOFFSET || boxtype == BOX_CHUNKOFFSET64);
-    let mut offsets = Vec::new();
     let _version_flag = read_u32(&mut reader)?;
     let entry_count = read_u32(&mut reader)?;
+    let mut offsets = Vec::with_capacity(entry_count as usize);
     for _ in 0..entry_count {
         let chunk_offset = if boxtype == BOX_CHUNKOFFSET {
             read_u32(&mut reader)? as u64
