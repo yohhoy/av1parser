@@ -1,9 +1,9 @@
 //
 // https://aomedia.org/av1-bitstream-and-decoding-process-specification/
 //
-use obu;
+use crate::obu;
 
-use obu::NUM_REF_FRAMES;
+use crate::obu::NUM_REF_FRAMES;
 
 pub const INTRA_FRAME: usize = 0;
 pub const LAST_FRAME: usize = 1;

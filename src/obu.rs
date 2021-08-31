@@ -1,8 +1,8 @@
 //
 // https://aomedia.org/av1-bitstream-and-decoding-process-specification/
 //
-use av1;
-use bitio::BitReader;
+use crate::av1;
+use crate::bitio::BitReader;
 use std::cmp;
 use std::fmt;
 use std::io;
@@ -17,7 +17,7 @@ pub const OBU_REDUNDANT_FRAME_HEADER: u8 = 7;
 pub const OBU_TILE_LIST: u8 = 8;
 pub const OBU_PADDING: u8 = 15;
 
-use av1::{
+use crate::av1::{
     ALTREF2_FRAME, ALTREF_FRAME, BWDREF_FRAME, GOLDEN_FRAME, INTRA_FRAME, LAST2_FRAME, LAST3_FRAME,
     LAST_FRAME,
 };
