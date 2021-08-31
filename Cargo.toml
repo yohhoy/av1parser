@@ -7,4 +7,4 @@ description = "AV1 Bitstream Parser"
 [dependencies]
 byteorder = "1.2"
 clap = "2.32"
-hex = "0.3"
+hex = "0.4"
