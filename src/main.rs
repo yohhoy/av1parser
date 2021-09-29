@@ -4,6 +4,9 @@ extern crate byteorder;
 extern crate clap;
 extern crate hex;
 
+#[cfg(feature = "metadata_hdr10plus")]
+extern crate hdr10plus;
+
 use av1parser::*;
 use clap::{App, Arg};
 use std::cmp;
@@ -117,6 +120,22 @@ fn process_obu<R: io::Read>(
             if let Ok(metadata) = obu::parse_metadata_obu(reader) {
                 if config.verbose > 1 {
                     println!("    {:?}", metadata);
+
+                    if let obu::MetadataObu::ItutT35(m) = metadata {
+                        match &m.itu_t_t35_payload_bytes[..7] {
+                            [0xB5, 0x00, 0x3C, 0x00, 0x01, 0x04, 0x01] => {
+                                println!("    ST2094-40 metadata");
+
+                                // ST2094-40
+                                // https://aomediacodec.github.io/av1-hdr10plus/#use-of-hdr10-with-av1-t35-obus
+                                #[cfg(feature = "metadata_hdr10plus")] {
+                                    let parsed_meta = hdr10plus::metadata::Hdr10PlusMetadata::parse(m.itu_t_t35_payload_bytes);
+                                    println!("        {:?}", parsed_meta);
+                                }
+                            },
+                            _ => (),
+                        }
+                    }
                 }
             } else {
                 println!("    invalid MetadataObu");

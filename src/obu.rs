@@ -2202,16 +2202,22 @@ fn parse_scalability_structure<R: io::Read>(br: &mut BitReader<R>) -> Option<Sca
 ///
 /// parse metadata_itut_t35()
 ///
+/// include all bytes in payload vec
 fn parse_itu_t_t35_metadata<R: io::Read>(br: &mut BitReader<R>) -> Option<MetadataObu> {
     let mut meta = ItutT35Metadata::default();
 
     meta.itu_t_t35_country_code = br.f::<u8>(8)?; // f(8)
+    meta.itu_t_t35_payload_bytes.push(meta.itu_t_t35_country_code);
 
     meta.itu_t_t35_country_code_extension_byte = if meta.itu_t_t35_country_code == 0xFF {
         br.f::<u8>(8) // f(8)
     } else {
         None
     };
+
+    if let Some(ext_byte) = meta.itu_t_t35_country_code_extension_byte {
+        meta.itu_t_t35_payload_bytes.push(ext_byte);
+    }
 
     while let Some(byte) = br.f::<u8>(8) {
         meta.itu_t_t35_payload_bytes.push(byte);
