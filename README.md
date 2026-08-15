@@ -1,3 +1,7 @@
+
+</think>
+
+```markdown
 # av1parser
 [![Build Status](https://github.com/yohhoy/av1parser/actions/workflows/rust.yml/badge.svg)](https://github.com/yohhoy/av1parser/actions/workflows/rust.yml)
 [![MIT License](http://img.shields.io/badge/license-MIT-blue.svg?style=flat)](LICENSE)
@@ -18,6 +22,8 @@ Run with maximum verbose output:
 $ cargo run streams/parkjoy.webm -vvv
 ...
 ```
+
+> **Note**: Sample test files are not included in this repository. You can obtain streams by running the Python scripts provided in the `streams/` directory or by using your own AV1 bitstream file.
 
 (The semantics of each syntax element are defined in AV1 specification. Enjoy it! :P)
 
@@ -44,3 +50,4 @@ Supported OBU types:
 
 ## License
 MIT License
+```
