@@ -158,7 +158,7 @@ pub mod stringify {
             LAST3_FRAME => "LAST3".into(),
             GOLDEN_FRAME => "GOLDEN".into(),
             BWDREF_FRAME => "BWDREF".into(),
-            ALTREF2_FRAME => "ALTREF".into(),
+            ALTREF2_FRAME => "ALTREF2".into(),
             ALTREF_FRAME => "ALTREF".into(),
             _ => format!("0b{:08b}", bitmask).into(),
         }
