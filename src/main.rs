@@ -1,5 +1,4 @@
 extern crate av1parser;
-extern crate byteorder;
 #[macro_use]
 extern crate clap;
 extern crate hex;
@@ -10,13 +9,6 @@ use std::cmp;
 use std::fs;
 use std::io;
 use std::io::{Seek, SeekFrom};
-
-mod av1;
-mod bitio;
-mod ivf;
-mod mkv;
-mod mp4;
-mod obu;
 
 /// application global config
 struct AppConfig {
