@@ -4,7 +4,16 @@ version = "0.2.1"
 authors = ["yoh <kawasaki.liamg@gmail.com>"]
 description = "AV1 Bitstream Parser"
 
+[[bin]]
+name = "av1parser"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+cli = ["dep:clap"]
+
 [dependencies]
 byteorder = "1.2"
-clap = { version = "4", features = ["cargo"] }
+clap = { version = "4", features = ["cargo"], optional = true }
 hex = "0.4"

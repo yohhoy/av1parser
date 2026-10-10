@@ -22,6 +22,17 @@ $ cargo run streams/parkjoy.webm -vvv
 (The semantics of each syntax element are defined in AV1 specification. Enjoy it! :P)
 
 
+## Use as a library
+The command line program is built with the `cli` feature (enabled by default), which depends on [clap][clap].
+When you use this crate as a library, disable default features to avoid pulling in clap:
+```toml
+[dependencies]
+av1parser = { git = "https://github.com/yohhoy/av1parser", default-features = false }
+```
+
+[clap]: https://crates.io/crates/clap
+
+
 ## Details
 Supported file formats:
 - Raw bitstream (Low overhead bitstream format)
