@@ -6,5 +6,5 @@ description = "AV1 Bitstream Parser"
 
 [dependencies]
 byteorder = "1.2"
-clap = "2.32"
+clap = { version = "4", features = ["cargo"] }
 hex = "0.4"

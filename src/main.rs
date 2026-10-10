@@ -5,7 +5,7 @@ extern crate clap;
 extern crate hex;
 
 use av1parser::*;
-use clap::{App, Arg};
+use clap::{Arg, ArgAction, Command};
 use std::cmp;
 use std::fs;
 use std::io;
@@ -366,19 +366,30 @@ fn process_file(fname: &str, config: &AppConfig) -> io::Result<()> {
 
 /// application entry point
 fn main() -> std::io::Result<()> {
-    let app = App::new(crate_name!())
+    let app = Command::new(crate_name!())
         .version(crate_version!())
         .about(crate_description!())
-        .arg(Arg::from_usage("<INPUT>... 'Input AV1 bitstream files'").index(1))
-        .arg(Arg::from_usage("[v]... -v --verbose 'Show verbose log'"));
+        .arg(
+            Arg::new("INPUT")
+                .help("Input AV1 bitstream files")
+                .required(true)
+                .num_args(1..),
+        )
+        .arg(
+            Arg::new("v")
+                .short('v')
+                .long("verbose")
+                .help("Show verbose log")
+                .action(ArgAction::Count),
+        );
 
     // get commandline flags
     let matches = app.get_matches();
     let config = AppConfig {
-        verbose: matches.occurrences_of("v"),
+        verbose: matches.get_count("v") as u64,
     };
 
-    for fname in matches.values_of("INPUT").unwrap() {
+    for fname in matches.get_many::<String>("INPUT").unwrap() {
         process_file(fname, &config)?;
     }
     Ok(())
